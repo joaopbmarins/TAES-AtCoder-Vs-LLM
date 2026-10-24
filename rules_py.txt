@@ -1,0 +1,11 @@
+# Inspeções Python (IDs do Qodana/IntelliJ) — um por linha
+PyUnusedLocalInspection
+PyUnresolvedReferencesInspection
+PyShadowingNamesInspection
+PyShadowingBuiltinsInspection
+PyBroadExceptionInspection
+PyMethodMayBeStaticInspection
+PyRedundantParenthesesInspection
+PyPep8Inspection
+PyPep8NamingInspection
+PyArgumentListInspection

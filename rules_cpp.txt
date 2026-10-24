@@ -1,0 +1,12 @@
+# Inspeções C/C++ — IDs conforme aparecem no qodana.sarif.json do linter qodana-clang.
+# Exemplos de checks do Clang-Tidy (confirme o formato do ID no SARIF):
+readability-magic-numbers
+readability-braces-around-statements
+readability-identifier-naming
+readability-function-cognitive-complexity
+readability-else-after-return
+bugprone-narrowing-conversions
+modernize-use-auto
+modernize-loop-convert
+performance-for-range-copy
+cppcoreguidelines-avoid-non-const-global-variables
