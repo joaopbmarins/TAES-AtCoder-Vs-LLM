@@ -302,7 +302,7 @@ def download_submissions_from_df(df: pd.DataFrame,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Baixa submissões do AtCoder.")
-    parser.add_argument("--csv", default="ultimas_1000.csv",
+    parser.add_argument("--csv", default="submissoes_filtradas.csv",
                         help="CSV de entrada com as submissões (colunas: id, contest_id, problem_id, language, result)")
     parser.add_argument("--out", default="atcoder_submissions", help="Pasta de saída")
     parser.add_argument("--all", action="store_true", help="Baixar todas, não apenas AC")
