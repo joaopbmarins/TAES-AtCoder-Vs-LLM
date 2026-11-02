@@ -1,9 +1,8 @@
 .env
+.env.*
+!.env.example
 
-atcoder_submissions
-qodana_results
-submissoes
-
-relatorio_submissoes.csv
-relatorio_resumo.csv
-relatorio_comparacao.csv
+# artefatos gerados
+outputs/
+__pycache__/
+*.pyc

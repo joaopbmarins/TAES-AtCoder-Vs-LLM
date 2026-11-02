@@ -1,11 +1,16 @@
+import argparse
 import os
+from pathlib import Path
+
 import pandas as pd
 import requests
 
 SUBS_URL = "https://s3-ap-northeast-1.amazonaws.com/kenkoooo/submissions.csv.gz"
-SUBS_CANDIDATOS = ["submissions.csv", "submissions.csv.gz"]   # ordem de preferência
+SUBS_CANDIDATOS = ["submissions.csv", "submissions.csv.gz"]
 CONTESTS = "https://kenkoooo.com/atcoder/resources/contests.json"
 TZ = "America/Sao_Paulo"
+DEFAULT_OUTPUT_DIR = "outputs/01_filter"
+DEFAULT_FILTERED_FILENAME = "01_filter_filtered_submissions.csv"
 
 
 def garantir_dataset(candidatos=SUBS_CANDIDATOS, url=SUBS_URL):
@@ -54,22 +59,80 @@ inicio = (contests[["id", "start_epoch_second"]]
                            "start_epoch_second": "contest_start_epoch"}))
 
 
+def _prioridade_resultado(valor):
+    """Prioridade para ordenar submissões úteis antes de aplicar caps."""
+    if pd.isna(valor):
+        return 99
+    texto = str(valor).strip().upper()
+    ordem = {"AC": 0, "WA": 1, "TLE": 2, "RE": 3, "CE": 4, "MLE": 5, "OLE": 6, "QLE": 7}
+    return ordem.get(texto, 99)
+
+
+def _aplicar_caps(df, max_por_problema=None, max_por_contest=None):
+    """Aplica deduplicação por usuário/problema e limita o número de linhas."""
+    if df.empty:
+        return df
+
+    df = df.copy()
+
+    if "result" in df.columns:
+        df["_resultado_ordem"] = df["result"].map(_prioridade_resultado)
+    else:
+        df["_resultado_ordem"] = 99
+
+    if {"contest_id", "problem_id", "user_id"}.issubset(df.columns):
+        df = df.sort_values(
+            ["contest_id", "problem_id", "user_id", "_resultado_ordem", "epoch_second"],
+            ascending=[True, True, True, True, True],
+            kind="mergesort",
+        )
+        df = df.drop_duplicates(subset=["contest_id", "problem_id", "user_id"], keep="first")
+
+    if max_por_problema is not None and {"contest_id", "problem_id"}.issubset(df.columns):
+        df = df.sort_values(
+            ["contest_id", "problem_id", "_resultado_ordem", "epoch_second"],
+            ascending=[True, True, True, True],
+            kind="mergesort",
+        )
+        df = df.groupby(["contest_id", "problem_id"], group_keys=False).head(max_por_problema)
+
+    if max_por_contest is not None and "contest_id" in df.columns:
+        df = df.sort_values(
+            ["contest_id", "_resultado_ordem", "epoch_second"],
+            ascending=[True, True, True],
+            kind="mergesort",
+        )
+        df = df.groupby("contest_id", group_keys=False).head(max_por_contest)
+
+    return df.drop(columns=["_resultado_ordem"], errors="ignore")
+
+
 def processar(
     contests_lista=None,      # ex.: ["abc300", "abc301", "arc160"]
     prefixos_contest=None,    # ex.: ["abc", "arc"]  (todos os ABC e ARC)
     linguagens=None,          # ex.: ["C++", "Python"] (começa com...)
     linguagens_exatas=None,   # ex.: ["C++ 20 (gcc 12.2)"]
-    resultados=["AC"],        # padrão: só aprovadas; use None para manter todos
+    resultados=["AC"],       # padrão: só aprovadas; use None para manter todos
     corte=None,               # "YYYY-MM-DD" (início do contest)
     envio_de=None,            # início da janela de envio: "YYYY-MM-DD" ou "YYYY-MM-DD HH:MM"
     envio_ate=None,           # fim da janela de envio (inclusivo se for só data)
-    saida="submissoes_filtradas.csv",
+    max_por_problema=None,    # no máximo de submissões por contest+problem
+    max_por_contest=None,     # no máximo de submissões por contest
+    saida=str(Path(DEFAULT_OUTPUT_DIR) / DEFAULT_FILTERED_FILENAME),
+    dataset_path=None,
 ):
-    subs = garantir_dataset()            # .csv ou .csv.gz; baixa se faltar
+    if max_por_problema is not None and max_por_problema <= 0:
+        raise ValueError("max_por_problema deve ser maior que zero.")
+    if max_por_contest is not None and max_por_contest <= 0:
+        raise ValueError("max_por_contest deve ser maior que zero.")
+
+    subs = dataset_path if dataset_path is not None else garantir_dataset()  # .csv ou .csv.gz; baixa se faltar
 
     # evita sobrar arquivo antigo de uma execução anterior
-    if os.path.exists(saida):
-        os.remove(saida)
+    saida_path = Path(saida)
+    saida_path.parent.mkdir(parents=True, exist_ok=True)
+    if saida_path.exists():
+        saida_path.unlink()
 
     corte_epoch = pd.Timestamp(corte, tz=TZ).timestamp() if corte else None
     envio_de_epoch = para_epoch(envio_de) if envio_de else None
@@ -78,8 +141,7 @@ def processar(
     if envio_de_epoch and envio_ate_epoch and envio_de_epoch >= envio_ate_epoch:
         raise ValueError("envio_de deve ser anterior a envio_ate.")
 
-    primeiro = True
-
+    blocos = []
     for bloco in pd.read_csv(subs, chunksize=1_000_000):   # pandas detecta o .gz pela extensão
         # filtros baratos primeiro
         if envio_de_epoch is not None:
@@ -111,34 +173,59 @@ def processar(
         bloco["contest_start_datetime"] = (
             pd.to_datetime(bloco["contest_start_epoch"], unit="s", utc=True)
               .dt.tz_convert(TZ))
+        blocos.append(bloco)
 
-        bloco.to_csv(saida, mode="w" if primeiro else "a",
-                     header=primeiro, index=False)
-        primeiro = False
-
-    if primeiro:
+    if not blocos:
         print(f"Nenhuma submissão passou nos filtros ({saida} não foi criado).")
-    else:
-        print(f"Gerado: {saida}")
+        return saida
+
+    final = pd.concat(blocos, ignore_index=True)
+    if max_por_problema is not None or max_por_contest is not None:
+        final = _aplicar_caps(final, max_por_problema=max_por_problema, max_por_contest=max_por_contest)
+
+    final.to_csv(saida, index=False)
+    print(f"Gerado: {saida}")
+    return saida
+
+
+def build_parser():
+    ap = argparse.ArgumentParser(description="Filtra o dataset de submissions do AtCoder.")
+    ap.add_argument("--csv", default="submissions.csv", help="Dataset bruto de submissões (opcional).")
+    ap.add_argument("--out", default=str(Path(DEFAULT_OUTPUT_DIR) / DEFAULT_FILTERED_FILENAME),
+                    help="CSV de saída filtrado.")
+    ap.add_argument("--contests", nargs="*", help="IDs exatos de contests a manter, ex.: abc300 abc301")
+    ap.add_argument("--prefixos-contest", nargs="*", help="Prefixos de contest, ex.: abc arc")
+    ap.add_argument("--linguagens", nargs="*", help="Linguagens iniciais, ex.: Python PyPy")
+    ap.add_argument("--linguagens-exatas", nargs="*", help="Nomes exatos de linguagens, ex.: 'C++ 20 (gcc 12.2)'")
+    ap.add_argument("--resultados", nargs="*", help="Resultados a manter, ex.: AC WA. Se não informar, usa AC.")
+    ap.add_argument("--all-results", action="store_true", help="Mantém todos os resultados sem filtrar por AC.")
+    ap.add_argument("--corte", help="Mantém só contests iniciados a partir desta data (YYYY-MM-DD).")
+    ap.add_argument("--envio-de", help="Limite inferior da janela de envio (YYYY-MM-DD ou YYYY-MM-DD HH:MM).")
+    ap.add_argument("--envio-ate", help="Limite superior da janela de envio (YYYY-MM-DD ou YYYY-MM-DD HH:MM).")
+    ap.add_argument("--max-por-problema", type=int, help="Mantém no máximo N submissões por contest+problem (ex.: 10).")
+    ap.add_argument("--max-por-contest", type=int, help="Mantém no máximo N submissões por contest (ex.: 100).")
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    resultados = None if args.all_results else (args.resultados or ["AC"])
+    processar(
+        contests_lista=args.contests,
+        prefixos_contest=args.prefixos_contest,
+        linguagens=args.linguagens,
+        linguagens_exatas=args.linguagens_exatas,
+        resultados=resultados,
+        corte=args.corte,
+        envio_de=args.envio_de,
+        envio_ate=args.envio_ate,
+        max_por_problema=args.max_por_problema,
+        max_por_contest=args.max_por_contest,
+        saida=args.out,
+        dataset_path=args.csv,
+    )
+    return args.out
 
 
 if __name__ == "__main__":
-    # exemplo: submissões enviadas entre 01/03/2025 e 31/03/2025 (março inteiro)
-    processar(
-        prefixos_contest=["abc"],
-        linguagens=["Python", "PyPy"],
-        envio_de="2025-03-01",
-        envio_ate="2025-03-31",
-        saida="abc_py_marco_2025.csv",
-    )
-
-    # exemplo: janela com horário
-    # processar(
-    #     contests_lista=["abc300", "abc301", "abc302"],
-    #     envio_de="2026-03-04 21:00",
-    #     envio_ate="2026-03-05 00:00",
-    #     saida="abc_janela_horario.csv",
-    # )
-
-    # exemplo: só limite inferior (tudo enviado a partir de uma data)
-    # processar(prefixos_contest=["abc"], envio_de="2026-06-01", saida="abc_desde_junho.csv")
+    main()

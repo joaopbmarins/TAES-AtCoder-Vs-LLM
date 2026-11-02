@@ -4,6 +4,7 @@ import csv
 import json
 import time
 import argparse
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -15,6 +16,10 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 SLEEP = 1.5
+DEFAULT_OUTPUT_DIR = os.path.join("outputs", "02_download", "02_download_atcoder_submissions")
+DEFAULT_METADATA_FILENAME = "02_download_atcoder_submissions_metadata.csv"
+DEFAULT_PROBLEM_LIST_FILENAME = "02_download_atcoder_submissions_problems.csv"
+PROBLEM_LIST_COLUMNS = ["contest", "problem", "problem_id", "url", "submissions_count"]
 
 # Ordem importa: "c++" e "c#" devem ser testados antes de "c ".
 EXTENSION_MAP = {
@@ -213,11 +218,79 @@ def append_csv_row(csv_path: str, row: dict):
         writer.writerow(row)
 
 
+def build_problem_url(contest_id: str, problem_id: str) -> str:
+    return f"{BASE_URL}/contests/{contest_id}/tasks/{problem_id}"
+
+
+def export_problem_list_csv(metadata_csv: str, out_csv: str = None) -> str:
+    """Cria um CSV compacto com contest, problem, problem_id, url e submissions_count para uso pelo atcoder_loop."""
+    metadata_path = Path(metadata_csv)
+    out_path = Path(out_csv) if out_csv else metadata_path.with_name(DEFAULT_PROBLEM_LIST_FILENAME)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not metadata_path.exists():
+        pd.DataFrame(columns=PROBLEM_LIST_COLUMNS).to_csv(out_path, index=False, encoding="utf-8-sig")
+        return str(out_path)
+
+    df = pd.read_csv(metadata_path)
+    rows = []
+    seen = set()
+    counts = {}
+
+    for _, row in df.iterrows():
+        problem_id = str(row.get("pagina_problema") or row.get("problem_id") or "").strip()
+        if problem_id and "/tasks/" in problem_id:
+            problem_id = problem_id.rsplit("/tasks/", 1)[1].strip()
+        elif problem_id and problem_id.endswith(".py"):
+            problem_id = problem_id.rsplit(".", 1)[0]
+        if not problem_id:
+            continue
+        counts[problem_id] = counts.get(problem_id, 0) + 1
+
+    for _, row in df.iterrows():
+        problem_id = str(row.get("pagina_problema") or row.get("problem_id") or "").strip()
+        if problem_id and "/tasks/" in problem_id:
+            problem_id = problem_id.rsplit("/tasks/", 1)[1].strip()
+        elif problem_id and problem_id.endswith(".py"):
+            problem_id = problem_id.rsplit(".", 1)[0]
+
+        contest = str(row.get("sigla_campeonato") or row.get("campeonato") or "").strip()
+        if not contest and problem_id:
+            contest = problem_id.rsplit("_", 1)[0] if "_" in problem_id else ""
+
+        if not problem_id:
+            continue
+
+        url = str(row.get("pagina_problema") or "").strip()
+        if not url and contest:
+            url = build_problem_url(contest, problem_id)
+
+        problem = str(row.get("nome_problema") or row.get("problem") or problem_id).strip()
+        if not problem:
+            problem = problem_id
+
+        key = (contest, problem_id)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        rows.append({
+            "contest": contest,
+            "problem": problem,
+            "problem_id": problem_id,
+            "url": url,
+            "submissions_count": counts.get(problem_id, 0),
+        })
+
+    pd.DataFrame(rows, columns=PROBLEM_LIST_COLUMNS).to_csv(out_path, index=False, encoding="utf-8-sig")
+    return str(out_path)
+
+
 # --------------------------------------------------------------------------
 # Download
 # --------------------------------------------------------------------------
 def download_submissions_from_df(df: pd.DataFrame,
-                                 output_dir: str = "atcoder_submissions",
+                                 output_dir: str = DEFAULT_OUTPUT_DIR,
                                  only_ac: bool = True,
                                  metadata_csv: str = None):
     """
@@ -229,7 +302,8 @@ def download_submissions_from_df(df: pd.DataFrame,
                     <sub_id>_<veredito>.<ext>
     """
     os.makedirs(output_dir, exist_ok=True)
-    metadata_csv = metadata_csv or os.path.join(output_dir, "submissoes.csv")
+    metadata_csv = metadata_csv or os.path.join(output_dir, DEFAULT_METADATA_FILENAME)
+    os.makedirs(os.path.dirname(metadata_csv) or ".", exist_ok=True)
     done_ids = load_done_ids(metadata_csv)
 
     baixadas = falhas = puladas = 0
@@ -298,20 +372,25 @@ def download_submissions_from_df(df: pd.DataFrame,
     print(f"Problemas únicos : {len(problemas_vistos)}")
     print(f"Falhas           : {falhas}")
     print(f"CSV de metadados : {metadata_csv}")
+    problem_list_csv = export_problem_list_csv(metadata_csv)
+    print(f"CSV de problemas : {problem_list_csv}")
 
 
-if __name__ == "__main__":
+def build_parser():
     parser = argparse.ArgumentParser(description="Baixa submissões do AtCoder.")
-    parser.add_argument("--csv", default="submissoes_filtradas.csv",
+    parser.add_argument("--csv", default=str(Path("outputs") / "01_filter" / "01_filter_filtered_submissions.csv"),
                         help="CSV de entrada com as submissões (colunas: id, contest_id, problem_id, language, result)")
-    parser.add_argument("--out", default="atcoder_submissions", help="Pasta de saída")
+    parser.add_argument("--out", default=DEFAULT_OUTPUT_DIR, help="Pasta de saída")
     parser.add_argument("--all", action="store_true", help="Baixar todas, não apenas AC")
     parser.add_argument("--contest", default=None,
                         help="Baixar só um campeonato (ID ou parte do nome, ex.: 'abc300' ou 'Beginner Contest 300')")
     parser.add_argument("--list-contests", action="store_true",
                         help="Lista os campeonatos presentes no CSV e sai")
-    args = parser.parse_args()
+    return parser
 
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     df_submissions = pd.read_csv(args.csv)
     os.makedirs(args.out, exist_ok=True)
     names_cache = os.path.join(args.out, "contest_names.json")
@@ -328,3 +407,8 @@ if __name__ == "__main__":
         output_dir=args.out,
         only_ac=not args.all,
     )
+    return args.out
+
+
+if __name__ == "__main__":
+    main()

@@ -3,7 +3,7 @@
 Compara code smells de submissões aceitas no AtCoder (humanos x IA) com o JetBrains Qodana.
 
 Estrutura esperada:
-    submissoes/
+    outputs/02_download/02_download_atcoder_submissions/
         AtCoder/                 -> submissões humanas
             abc300/
                 a/
@@ -16,10 +16,10 @@ Estrutura esperada:
                     claude_01.cpp
 
 Uso:
-    python qodana_atcoder.py ./submissoes \
+    python qodana_atcoder.py ./outputs/02_download/02_download_atcoder_submissions \
         --rules-python rules_py.txt --rules-cpp rules_cpp.txt \
         --linter-python jetbrains/qodana-python-community:2026.2 \
-        --linter-cpp jetbrains/qodana-clang:2026.2 --out relatorio
+        --linter-cpp jetbrains/qodana-clang:2026.2 --out outputs/04_qodana/04_qodana_relatorio
 
 Gera:
     <out>_submissoes.csv  -> uma linha por submissão (coluna 'origem' = humano | IA)
@@ -155,7 +155,7 @@ def ratio(a, b, nd=2):
     return round(a / b, nd) if b else ""
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("root", type=Path, help="pasta raiz (contém as pastas AtCoder e IA)")
     ap.add_argument("--sources", default="AtCoder=humano,IA=IA",
@@ -173,9 +173,16 @@ def main():
                     help="níveis de pasta dentro de cada origem, acima do arquivo (padrão: contest,problem)")
     ap.add_argument("--scope", choices=["contest", "all"], default="contest",
                     help="'contest': uma execução por campeonato; 'all': uma execução por origem")
-    ap.add_argument("--out", default="relatorio", help="prefixo dos CSVs de saída")
-    ap.add_argument("--results-root", type=Path, default=Path("qodana_results"))
-    args = ap.parse_args()
+    ap.add_argument("--out", default=str(Path("outputs") / "04_qodana" / "04_qodana_relatorio"), help="prefixo dos CSVs de saída")
+    ap.add_argument("--results-root", type=Path, default=Path("outputs") / "04_qodana" / "04_qodana_results")
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    args.results_root.mkdir(parents=True, exist_ok=True)
 
     group_cfg = {}
     if args.rules_python:
