@@ -1,6 +1,7 @@
 """Grafo padrão do projeto: build_prompt -> generate -> evaluate -> (reparo | fim)."""
 from __future__ import annotations
 
+import logging
 import re
 from typing import TypedDict
 
@@ -9,6 +10,8 @@ from langgraph.graph import END, START, StateGraph
 from ..config import FENCE, MAX_ATTEMPTS, MAX_FEEDBACK_CHARS
 from ..judge import Submitter
 from ..llm import invoke_with_retry
+
+log = logging.getLogger(__name__)
 
 
 def initial_prompt(statement: str) -> str:
@@ -31,13 +34,44 @@ def repair_prompt(statement: str, error: str, code: str) -> str:
     )
 
 
-_CODE_RE = re.compile(r"```[ \t]*(?:python3?|py)?[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+_CODE_RE = re.compile(
+    r"```(?:[ \t]*(?:python3?|py)?[ \t]*)?\r?\n(.*?)\r?\n```",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _looks_like_code(text: str) -> bool:
+    text = (text or "").strip()
+    if not text:
+        return False
+    markers = (
+        "def ", "class ", "import ", "from ", "print(", "input(", "return ",
+        "#include", "int main", "using namespace", "std::", "cout", "cin",
+    )
+    lower = text.lower()
+    return any(marker.lower() in lower for marker in markers)
 
 
 def extract_code(text: str) -> str:
-    """Último bloco de código da resposta ('' se não houver)."""
+    """Último bloco de código da resposta ou, em último caso, um texto que pareça código."""
     blocks = _CODE_RE.findall(text or "")
-    return blocks[-1].strip() + "\n" if blocks else ""
+    if blocks:
+        last = blocks[-1].strip()
+        if last:
+            return last + "\n"
+
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+
+    stripped = re.sub(r"^```(?:[\w+-]+)?\s*\r?\n|\r?\n```\s*$", "", raw, flags=re.IGNORECASE)
+    if stripped.strip() and _looks_like_code(stripped):
+        return stripped.strip() + "\n"
+
+    if _looks_like_code(raw):
+        return raw + "\n"
+
+    return ""
 
 
 class S(TypedDict, total=False):
@@ -58,14 +92,22 @@ def build_default_graph(llm, submit_fn: Submitter):
         return {"prompt": repair_prompt(st, s["result"]["feedback"], s["code"])}
 
     def generate(s: S) -> S:
+        attempt_no = s.get("attempt", 0) + 1
+        log.info("[graph] gerando tentativa %d com modelo=%s", attempt_no,
+                 getattr(llm, "model_name", None) or getattr(llm, "model", None) or type(llm).__name__)
         text = invoke_with_retry(llm, s["prompt"])
-        return {"code": extract_code(text), "raw": text, "attempt": s.get("attempt", 0) + 1}
+        code = extract_code(text)
+        log.info("[graph] tentativa %d concluída; codigo_len=%d; raw_len=%d", attempt_no, len(code), len(text))
+        return {"code": code, "raw": text, "attempt": attempt_no}
 
     def evaluate(s: S) -> S:
         if not s["code"]:
             res = {"verdict": "RE", "time_ms": None, "memory_kb": None, "feedback": "No code block found."}
+            log.warning("[graph] tentativa sem bloco de código, verdict=RE")
         else:
+            log.info("[graph] enviando solução para submissão; attempt=%s", s["attempt"])
             res = submit_fn(s["problem"], s["code"])
+            log.info("[graph] resultado da submissão: %s", res.get("verdict"))
         entry = {
             "attempt": s["attempt"],
             "prompt": s["prompt"],

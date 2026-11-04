@@ -31,13 +31,19 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
 
         saved = 0
         try:
+            log.info("[%d/%d] %s: iniciando scraping do problema", n, len(ids), pid)
             problem = scrape(pid)
+            log.info("[%d/%d] %s: scraping concluído; samples=%d; title=%s", n, len(ids), pid,
+                     len(problem.get("samples", [])), problem.get("title") or "(sem título)")
             if not problem["samples"]:
                 raise ValueError("sem exemplos no enunciado")
 
+            log.info("[%d/%d] %s: iniciando grafo do modelo", n, len(ids), pid)
             final: S = {}
-            for state in graph.stream({"problem": problem}, stream_mode="values"):
+            for step_idx, state in enumerate(graph.stream({"problem": problem}, stream_mode="values"), 1):
                 final = state
+                log.info("[%d/%d] %s: passo do grafo #%d; log_entries=%d; attempt=%s", n, len(ids), pid, step_idx,
+                         len(state.get("log", [])), state.get("attempt"))
                 for entry in state.get("log", [])[saved:]:
                     save_attempt(out / "tentativas" / pid, entry)
                     saved += 1
@@ -58,7 +64,7 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
             log.info("[%d/%d] %s -> %s (tentativas: %s)", n, len(ids), pid, res["verdict"],
                      " > ".join(e["result"]["verdict"] for e in final["log"]))
         except Exception as e:
-            log.exception("[%d/%d] %s falhou", n, len(ids), pid)
+            log.exception("[%d/%d] %s falhou no scraping/grafo/LLM/submissão: %s", n, len(ids), pid, e)
             row = {
                 "problem_id": pid,
                 "verdict": f"ERROR: {e}",

@@ -14,20 +14,43 @@ def _require_env(var_name: str, provider: str) -> str:
         return value.strip()
     raise ValueError(
         f"Para usar o provider '{provider}', defina a variável {var_name} no .env ou no ambiente. "
-        f"Se quiser usar Gemini/Google, configure GOOGLE_API_KEY."
+        "As opções comuns são GOOGLE_API_KEY, OPENAI_API_KEY e NVIDIA_API_KEY."
     )
 
 
+def _build_openai_compatible_llm(provider: str, model: str, temperature: float, max_tokens: int, *,
+                                api_key_env: str, base_url: str | None = None):
+    api_key = _require_env(api_key_env, provider)
+    from langchain_openai import ChatOpenAI
+    kwargs = {
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "api_key": api_key,
+    }
+    if base_url:
+        kwargs["base_url"] = base_url
+    return ChatOpenAI(**kwargs)
+
+
 def build_llm(provider: str, model: str, temperature: float, max_tokens: int):
-    provider = (provider or "google").lower()
-    if provider == "openai":
-        _require_env("OPENAI_API_KEY", provider)
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=model, temperature=temperature, max_tokens=max_tokens)
-    if provider == "google":
+    provider = (provider or "google").lower().replace("-", "_")
+    if provider in {"openai"}:
+        return _build_openai_compatible_llm(provider, model, temperature, max_tokens, api_key_env="OPENAI_API_KEY")
+    if provider in {"google", "gemini"}:
         _require_env("GOOGLE_API_KEY", provider)
         from langchain_google_genai import ChatGoogleGenerativeAI
         return ChatGoogleGenerativeAI(model=model, temperature=temperature, max_output_tokens=max_tokens)
+    if provider in {"nvidia", "nvidia_ai", "nvidia_ai_endpoints"}:
+        api_key = _require_env("NVIDIA_API_KEY", provider)
+        from langchain_nvidia_ai_endpoints import ChatNVIDIA
+        return ChatNVIDIA(
+            model=model,
+            api_key=api_key,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=0.7,
+        )
     raise ValueError(f"provider desconhecido: {provider}")
 
 
@@ -41,13 +64,19 @@ def message_text(content) -> str:
 
 
 def invoke_with_retry(llm, prompt: str, retries: int = 3) -> str:
+    model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None) or type(llm).__name__
+    log.info("[LLM] iniciando chamada para modelo=%s, prompt_chars=%d, tentativas=%d", model_name, len(prompt), retries)
     for k in range(retries):
         try:
-            return message_text(llm.invoke(prompt).content)
+            response = llm.invoke(prompt)
+            text = message_text(response.content)
+            log.info("[LLM] resposta recebida do modelo=%s (tentativa=%d/%d, bytes=%d)", model_name, k + 1, retries, len(text))
+            return text
         except Exception as e:  # rate limit, 5xx, timeout...
+            log.warning("[LLM] falha no modelo=%s (tentativa=%d/%d): %s", model_name, k + 1, retries, e)
             if k == retries - 1:
                 raise
             wait = 2 ** (k + 1)
-            log.warning("LLM falhou (%s); nova tentativa em %ss", e, wait)
+            log.warning("[LLM] nova tentativa em %ss", wait)
             time.sleep(wait)
     return ""

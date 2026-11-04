@@ -1,17 +1,24 @@
 """Submissão de soluções para o AtCoder."""
 from __future__ import annotations
 
+import logging
 import os
+import platform
 import re
+import subprocess
 import time
+import webbrowser
 from pathlib import Path
 from typing import Callable
+from urllib.parse import quote
 
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from .config import HEADERS
+
+log = logging.getLogger(__name__)
 
 Submitter = Callable[[dict, str], dict]
 
@@ -121,6 +128,142 @@ def _has_turnstile_challenge(html: str) -> bool:
     return "cf-turnstile" in text or "challenges.cloudflare.com/turnstile" in text or "turnstile" in text
 
 
+def _is_cloudflare_challenge(response: requests.Response | None) -> bool:
+    if response is None:
+        return False
+    html = (response.text or "").lower()
+    if response.status_code in {403, 429}:
+        return True
+    if "cloudflare" in html or "cf-turnstile" in html or "turnstile" in html or "verify you are human" in html:
+        return True
+    return False
+
+
+def _copy_text_to_clipboard(text: str) -> bool:
+    text = text or ""
+    if not text:
+        return False
+
+    def _try_copy(cmd: list[str]) -> bool:
+        try:
+            completed = subprocess.run(cmd, input=text, text=True, check=False, capture_output=True)
+            return completed.returncode == 0
+        except OSError:
+            return False
+
+    try:
+        system_name = platform.system().lower()
+
+        if system_name == "windows":
+            commands = (
+                ["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"],
+                ["clip"],
+            )
+            for cmd in commands:
+                if _try_copy(cmd):
+                    return True
+
+        if system_name == "darwin":
+            if _try_copy(["pbcopy"]):
+                return True
+
+        for cmd in (
+            ["wl-copy"],
+            ["xclip", "-selection", "clipboard"],
+            ["xsel", "--clipboard", "--input"],
+        ):
+            if _try_copy(cmd):
+                return True
+
+        try:
+            import tkinter
+            root = tkinter.Tk()
+            root.withdraw()
+            root.clipboard_clear()
+            root.clipboard_append(text)
+            root.update()
+            root.destroy()
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+    return False
+
+
+def _wait_for_manual_submission_confirmation(code: str = "") -> None:
+    if code:
+        print("\nCódigo disponível na área de transferência (Ctrl+V para colar no AtCoder).")
+        print("Opções: [1] Copiar novamente o código para a área de transferência | [2] Continuar sem copiar")
+        choice = input("Digite 1 para copiar novamente ou 2 para continuar: ").strip()
+        if choice == "1":
+            _copy_text_to_clipboard(code)
+            print("Código copiado novamente para a área de transferência.")
+        elif choice == "2":
+            print("Continuando sem copiar; irei consultar a submissão assim que ela aparecer no AtCoder.")
+            return
+
+    print("Abra a página de submissão do problema, cole o código, envie a solução e confirme a submissão.")
+    input("Quando a submissão estiver concluída, pressione Enter para continuar e recuperar o resultado...\n")
+
+
+def _handle_manual_captcha(
+    session: requests.Session,
+    contest: str,
+    problem_id: str,
+    task_url: str,
+    code: str = "",
+    language_id: str | None = None,
+    session_cookie: str | None = None,
+) -> dict:
+    browser_task_url = task_url if task_url.startswith("http") else f"https://atcoder.jp{task_url}"
+    login_url = "https://atcoder.jp/login"
+    continue_url = quote(browser_task_url, safe="")
+    login_continue_url = f"{login_url}?continue={continue_url}"
+
+    print("\nValidação manual do AtCoder detectada.")
+    print("Abrindo a página da tarefa no navegador padrão do sistema e copiando o código para a área de transferência.")
+    print(f"Login: {login_continue_url}")
+    print(f"Tarefa: {browser_task_url}")
+
+    if code:
+        _copy_text_to_clipboard(code)
+
+    try:
+        webbrowser.open(browser_task_url)
+    except Exception:
+        try:
+            webbrowser.open(login_continue_url)
+        except Exception:
+            pass
+
+    _wait_for_manual_submission_confirmation(code)
+    return _handle_manual_captcha_fallback(session, contest)
+
+
+def _handle_manual_captcha_fallback(session: requests.Session, contest: str) -> dict:
+    status = "WJ"
+    time_ms = None
+    memory_kb = None
+    for _ in range(30):
+        try:
+            status, time_ms, memory_kb = _submission_status(session, contest)
+            if status not in {"WJ", "Judging"}:
+                break
+        except Exception:
+            pass
+        time.sleep(2)
+
+    return {
+        "verdict": status,
+        "time_ms": time_ms,
+        "memory_kb": memory_kb,
+        "reason": "Submissão manual concluída após validação do navegador do usuário.",
+        "feedback": "Submissão concluída manualmente fora da sessão automatizada.",
+    }
+
+
 def _is_authenticated(session: requests.Session) -> bool:
     try:
         page = session.get("https://atcoder.jp/", timeout=30)
@@ -150,13 +293,45 @@ def _ensure_authenticated(session: requests.Session, session_cookie: str | None 
         )
 
 
+VERDICT_ALIASES: dict[str, tuple[str, ...]] = {
+    "AC": ("AC", "Accepted"),
+    "WA": ("WA", "Wrong Answer"),
+    "TLE": ("TLE", "Time Limit Exceeded"),
+    "RE": ("RE", "Runtime Error"),
+    "CE": ("CE", "Compilation Error"),
+    "MLE": ("MLE", "Memory Limit Exceeded"),
+    "OLE": ("OLE", "Output Limit Exceeded"),
+    "PE": ("PE", "Presentation Error"),
+    "QLE": ("QLE", "QLE"),
+    "SE": ("SE", "System Error"),
+    "IE": ("IE", "Judge Error"),
+    "WJ": ("WJ", "Judging"),
+}
+
+
+def _matches_verdict_alias(text: str, alias: str) -> bool:
+    if not text or not alias:
+        return False
+    lower = text.lower()
+    candidate = alias.lower()
+    if len(candidate) <= 3:
+        return bool(re.search(rf"(?<![A-Za-z0-9]){re.escape(candidate)}(?![A-Za-z0-9])", lower))
+    return bool(re.search(rf"(?<![A-Za-z]){re.escape(candidate)}(?![A-Za-z])", lower))
+
+
 def _extract_verdict(text: str) -> str | None:
     if not text:
         return None
-    for status in ("AC", "WA", "TLE", "RE", "CE", "MLE", "OLE", "PE", "QLE", "SE", "IE", "WJ"):
-        if status in text.upper():
-            return status
-    return None
+
+    matches: list[str] = []
+    for status, aliases in VERDICT_ALIASES.items():
+        if any(_matches_verdict_alias(text, alias) for alias in aliases):
+            matches.append(status)
+
+    if not matches:
+        return None
+
+    return matches[-1]
 
 
 def _find_submit_form(soup: BeautifulSoup) -> tuple[str, dict[str, str]]:
@@ -198,10 +373,9 @@ def _extract_metrics_from_html_fragment(fragment: str) -> tuple[str | None, int 
     text = _extract_readable_text(fragment)
     status = _extract_verdict(text)
     if status is None:
-        lower = text.lower()
-        for marker in ("accepted", "wrong answer", "time limit exceeded", "memory limit exceeded", "runtime error", "compilation error"):
-            if marker in lower:
-                status = marker.title()
+        for code, aliases in VERDICT_ALIASES.items():
+            if any(_matches_verdict_alias(text, alias) for alias in aliases):
+                status = code
                 break
 
     time_ms = None
@@ -225,41 +399,134 @@ def _extract_submission_metrics_from_payload(payload: object) -> tuple[str | Non
     if isinstance(payload, dict):
         items = payload.get("Result") if "Result" in payload else payload
         if isinstance(items, dict):
-            for value in items.values():
-                if isinstance(value, dict):
-                    status = _extract_verdict(str(value.get("Status") or value.get("status") or value.get("Verdict") or ""))
-                    if status is None:
-                        status = _extract_verdict(str(value.get("result") or value.get("name") or ""))
-                    html = value.get("Html") or value.get("html")
-                    if html:
-                        html_status, time_ms, memory_kb = _extract_metrics_from_html_fragment(str(html))
-                        if html_status is not None or time_ms is not None or memory_kb is not None:
-                            return html_status or status, time_ms, memory_kb
-                    time_ms = value.get("ExecutionTime") or value.get("Time") or value.get("time")
-                    memory_kb = value.get("Memory") or value.get("MemoryUsage") or value.get("memory")
-                    if time_ms is None:
-                        for key in ("ExecutionTime", "Time", "time", "elapsed_ms"):
-                            if key in value and isinstance(value[key], (int, float, str)):
-                                time_ms = value[key]
-                                break
-                    if memory_kb is None:
-                        for key in ("Memory", "MemoryUsage", "memory", "memory_kb"):
-                            if key in value and isinstance(value[key], (int, float, str)):
-                                memory_kb = value[key]
-                                break
-                    if status is not None or time_ms is not None or memory_kb is not None:
-                        return status, _coerce_int(time_ms, "ms"), _coerce_int(memory_kb, "kb")
-                elif isinstance(value, str):
-                    status, time_ms, memory_kb = _extract_metrics_from_html_fragment(value)
-                    if status is not None or time_ms is not None or memory_kb is not None:
-                        return status, time_ms, memory_kb
-        elif isinstance(items, list):
-            for item in items:
-                if isinstance(item, dict):
-                    status, time_ms, memory_kb = _extract_submission_metrics_from_payload(item)
-                    if status is not None or time_ms is not None or memory_kb is not None:
-                        return status, time_ms, memory_kb
-    return None, None, None
+            keyed_candidates: list[tuple[int, str | None, int | None, int | None]] = []
+            for submission_key, value in items.items():
+                if not isinstance(value, dict):
+                    continue
+                digits = re.sub(r"\D", "", str(submission_key))
+                submission_id = int(digits) if digits else -1
+                status = _extract_verdict(str(value.get("Status") or value.get("status") or value.get("Verdict") or value.get("verdict") or value.get("result") or value.get("name") or ""))
+                html = value.get("Html") or value.get("html")
+                if html:
+                    html_status, time_ms, memory_kb = _extract_metrics_from_html_fragment(str(html))
+                    if html_status is not None or time_ms is not None or memory_kb is not None:
+                        keyed_candidates.append((submission_id, html_status or status, time_ms, memory_kb))
+                        continue
+                time_ms = value.get("ExecutionTime") or value.get("Time") or value.get("time")
+                memory_kb = value.get("Memory") or value.get("MemoryUsage") or value.get("memory")
+                if time_ms is None:
+                    for key in ("ExecutionTime", "Time", "time", "elapsed_ms"):
+                        if key in value and isinstance(value[key], (int, float, str)):
+                            time_ms = value[key]
+                            break
+                if memory_kb is None:
+                    for key in ("Memory", "MemoryUsage", "memory", "memory_kb"):
+                        if key in value and isinstance(value[key], (int, float, str)):
+                            memory_kb = value[key]
+                            break
+                if status is not None or time_ms is not None or memory_kb is not None:
+                    keyed_candidates.append((submission_id, status, _coerce_int(time_ms, "ms"), _coerce_int(memory_kb, "kb")))
+            if keyed_candidates:
+                _, status, time_ms, memory_kb = max(keyed_candidates, key=lambda item: item[0])
+                return status, time_ms, memory_kb
+
+    candidates: list[tuple[str | None, str | None, int | None, int | None]] = []
+
+    def visit(node: object) -> None:
+        if isinstance(node, dict):
+            submission_id = None
+            for key in ("submission_id", "SubmissionId", "submissionId", "id", "Id"):
+                value = node.get(key)
+                if value is not None and str(value).strip():
+                    submission_id = str(value).strip()
+                    break
+
+            status = _extract_verdict(str(node.get("Status") or node.get("status") or node.get("Verdict") or node.get("verdict") or node.get("result") or node.get("name") or ""))
+            if status is None:
+                status = _extract_verdict(str(node.get("Result") or ""))
+
+            html = node.get("Html") or node.get("html")
+            if html:
+                html_status, time_ms, memory_kb = _extract_metrics_from_html_fragment(str(html))
+                if html_status is not None or time_ms is not None or memory_kb is not None:
+                    candidates.append((submission_id, html_status or status, time_ms, memory_kb))
+                    return
+
+            time_ms = node.get("ExecutionTime") or node.get("Time") or node.get("time")
+            memory_kb = node.get("Memory") or node.get("MemoryUsage") or node.get("memory")
+            if time_ms is None:
+                for key in ("ExecutionTime", "Time", "time", "elapsed_ms"):
+                    if key in node and isinstance(node[key], (int, float, str)):
+                        time_ms = node[key]
+                        break
+            if memory_kb is None:
+                for key in ("Memory", "MemoryUsage", "memory", "memory_kb"):
+                    if key in node and isinstance(node[key], (int, float, str)):
+                        memory_kb = node[key]
+                        break
+            if status is not None or time_ms is not None or memory_kb is not None:
+                candidates.append((submission_id, status, _coerce_int(time_ms, "ms"), _coerce_int(memory_kb, "kb")))
+
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+        elif isinstance(node, str):
+            status, time_ms, memory_kb = _extract_metrics_from_html_fragment(node)
+            if status is not None or time_ms is not None or memory_kb is not None:
+                candidates.append((None, status, time_ms, memory_kb))
+
+    visit(payload)
+    if not candidates:
+        return None, None, None
+
+    def sort_key(item: tuple[str | None, str | None, int | None, int | None]) -> tuple[int, int]:
+        submission_id, _, _, _ = item
+        if submission_id is None:
+            return (0, 0)
+        digits = re.sub(r"\D", "", submission_id)
+        return (1, int(digits)) if digits else (0, 0)
+
+    _, status, time_ms, memory_kb = max(candidates, key=sort_key)
+    return status, time_ms, memory_kb
+
+
+def _latest_submission_url(payload: object, contest: str) -> str | None:
+    if isinstance(payload, dict):
+        items = payload.get("Result") if "Result" in payload else payload
+        if isinstance(items, dict):
+            ids = []
+            for key in items.keys():
+                digits = re.sub(r"\D", "", str(key))
+                if digits:
+                    ids.append(int(digits))
+            if ids:
+                latest_id = max(ids)
+                return f"https://atcoder.jp/contests/{contest}/submissions/{latest_id}"
+
+    candidates: list[tuple[int, str | None]] = []
+
+    def visit(node: object) -> None:
+        if isinstance(node, dict):
+            for key in ("submission_id", "SubmissionId", "submissionId", "id", "Id"):
+                value = node.get(key)
+                if value is not None and str(value).strip():
+                    digits = re.sub(r"\D", "", str(value))
+                    if digits:
+                        candidates.append((int(digits), str(value)))
+                    break
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+
+    visit(payload)
+    if not candidates:
+        return None
+    latest_id = max(candidates, key=lambda item: item[0])[1]
+    return f"https://atcoder.jp/contests/{contest}/submissions/{latest_id}"
 
 
 def _coerce_int(value, unit: str) -> int | None:
@@ -293,18 +560,23 @@ def _submission_status(session: requests.Session, contest: str) -> tuple[str, in
         response = session.get(json_url, timeout=30)
         response.raise_for_status()
         payload = response.json()
+        submission_url = _latest_submission_url(payload, contest)
+        if submission_url:
+            log.debug("[judge] conferindo submissão %s", submission_url)
         status, time_ms, memory_kb = _extract_submission_metrics_from_payload(payload)
         if status is not None:
+            log.debug("[judge] verdict do JSON %s: %s", submission_url or json_url, status)
             return status, time_ms, memory_kb
     except Exception:
-        pass
+        log.debug("[judge] falha ao consultar status/json em %s", json_url, exc_info=True)
 
     url = f"https://atcoder.jp/contests/{contest}/submissions/me"
+    log.debug("[judge] fallback para página de submissões %s", url)
     response = session.get(url, timeout=30)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     rows = list(soup.select("tr"))
-    for row in reversed(rows):
+    for row in rows:
         cells = [cell.get_text(" ", strip=True) for cell in row.find_all("td")]
         if not cells:
             continue
@@ -325,9 +597,12 @@ def _submission_status(session: requests.Session, contest: str) -> tuple[str, in
                 time_ms = int(cell[:-2].strip())
             if cell.endswith("KB") and cell[:-2].strip().isdigit():
                 memory_kb = int(cell[:-2].strip())
+        log.debug("[judge] verdict da página HTML %s: %s", url, status)
         return status, time_ms, memory_kb
     match = _extract_verdict(response.text)
-    return match or "WJ", None, None
+    status = match or "WJ"
+    log.debug("[judge] sem verdict na página HTML; usando %s em %s", status, url)
+    return status, None, None
 
 
 def submit_atcoder(problem: dict, code: str, session_cookie: str | None = None) -> dict:
@@ -412,6 +687,16 @@ def submit_atcoder(problem: dict, code: str, session_cookie: str | None = None) 
         payload["data.LanguageId"] = language_id
 
     submit_response = session.post(action_url, data=payload, timeout=60)
+    if _is_cloudflare_challenge(submit_response):
+        fallback = _handle_manual_captcha(session, contest, problem_id, task_url, code, language_id, session_cookie)
+        return {
+            "verdict": fallback["verdict"],
+            "time_ms": fallback["time_ms"],
+            "memory_kb": fallback["memory_kb"],
+            "reason": fallback["reason"],
+            "feedback": fallback["feedback"],
+        }
+
     submit_response.raise_for_status()
     feedback_text = _extract_submission_reason(submit_response.text) or submit_response.text[:1000]
 

@@ -81,6 +81,13 @@ python atcoder_loop.py \
   --provider google \
   --model gemini-3.8-flash
 
+# exemplo usando NVIDIA NIM / API de modelos
+python atcoder_loop.py outputs/03_loop/03_loop_problems.csv \
+  --out outputs/03_loop/03_loop_resultados.csv \
+  --out-dir outputs/03_loop/03_loop_solucoes \
+  --provider nvidia \
+  --model meta/llama-3.1-70b-instruct
+
 # ou explícito:
 python atcoder_loop.py outputs/03_loop/03_loop_problems.csv \
   --out outputs/03_loop/03_loop_resultados.csv \

@@ -182,8 +182,8 @@ Opcionais:
 
 - `--out`: CSV de saída com os resultados do loop, padrão: `outputs/03_loop/03_loop_resultados.csv`
 - `--out-dir`: diretório para salvar as soluções geradas, padrão: `outputs/03_loop/03_loop_solucoes`
-- `--provider`: provedor do modelo: `openai` ou `google` (padrão: `google`)
-- `--model`: nome do modelo, por exemplo: `gemini-3.8-flash` ou `gpt-4o`
+- `--provider`: provedor do modelo: `openai`, `google` ou `nvidia` (padrão: `google`)
+- `--model`: nome do modelo, por exemplo: `gemini-3.8-flash`, `gpt-4o` ou `meta/llama-3.1-70b-instruct`
 - `--temperature`: temperatura usada pelo LLM (padrão: `1.0`)
 - `--max-tokens`: limite de tokens da resposta (padrão: `4096`)
 - `--atcoder-session-cookie`: cookie de sessão autenticada do AtCoder para submissão real
@@ -198,6 +198,8 @@ O script usa credenciais do modelo em `.env` ou no ambiente:
 GOOGLE_API_KEY=sua_chave_google
 # ou
 OPENAI_API_KEY=sua_chave_openai
+# ou
+NVIDIA_API_KEY=sua_chave_nvidia
 ```
 
 Para autenticar no AtCoder:
@@ -217,6 +219,17 @@ python atcoder_loop.py outputs/03_loop/03_loop_problems.csv \
   --provider google \
   --model gemini-3.8-flash \
   --atcoder-session-cookie "REVEL_SESSION=SEU_VALOR_DO_COOKIE"
+```
+
+#### Com modelos NVIDIA
+
+```bash
+export NVIDIA_API_KEY=sua_chave_nvidia
+python atcoder_loop.py outputs/03_loop/03_loop_problems.csv \
+  --out outputs/03_loop/03_loop_resultados.csv \
+  --out-dir outputs/03_loop/03_loop_solucoes \
+  --provider nvidia \
+  --model meta/llama-3.1-70b-instruct
 ```
 
 #### Com OpenAI
@@ -389,7 +402,7 @@ Parâmetros:
 - `--input`
 - `--out`
 - `--out-dir`
-- `--provider` (`openai` ou `google`)
+- `--provider` (`openai`, `google` ou `nvidia`)
 - `--model`
 - `--temperature`
 - `--max-tokens`

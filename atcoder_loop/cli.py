@@ -29,7 +29,7 @@ DESCRIPTION = """CSV de ids -> scraping no AtCoder -> loop gerar/submeter/repara
 
 CSV: uma coluna `problem_id` (ex.: abc300_a). O contest é o trecho antes do último "_".
 Se nenhum CSV for informado, o programa usa o arquivo de problemas da etapa 2 por padrão.
-Chaves de API: GOOGLE_API_KEY ou OPENAI_API_KEY (pode usar um arquivo .env).
+Chaves de API: GOOGLE_API_KEY, OPENAI_API_KEY ou NVIDIA_API_KEY (pode usar um arquivo .env).
 """
 
 
@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("csv", nargs="?", default=str(DEFAULT_PROBLEMS_CSV), help="CSV com a coluna problem_id; padrão: %(default)s")
     ap.add_argument("--out", default=str(Path("outputs") / "03_loop" / "03_loop_resultados.csv"))
     ap.add_argument("--out-dir", default=str(Path("outputs") / "03_loop" / "03_loop_solucoes"))
-    ap.add_argument("--provider", choices=["openai", "google"], default="google")
+    ap.add_argument("--provider", choices=["openai", "google", "nvidia"], default="google")
     ap.add_argument("--model", default="gemini-3.8-flash")
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--max-tokens", type=int, default=4096)
