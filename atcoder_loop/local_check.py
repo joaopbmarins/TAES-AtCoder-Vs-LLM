@@ -18,6 +18,12 @@ def _norm(text: str) -> list[str]:
     return [line.rstrip() for line in text.strip().splitlines()]
 
 
+def _compact_debug(text: str, limit: int = 600) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n... [truncado]"
+
+
 def _is_equal(got: str, expected: str) -> bool:
     got_l, exp_l = _norm(got), _norm(expected)
     if got_l == exp_l:
@@ -42,13 +48,18 @@ def check_samples(code: str, samples: list[tuple[str, str]], timeout: float = LO
                 proc = subprocess.run([sys.executable, "-I", str(path)], input=stdin, text=True,
                                       capture_output=True, timeout=timeout, cwd=tmp)
             except subprocess.TimeoutExpired:
-                msg = f"Sample {n}: timed out after {timeout:.0f}s.\nInput:\n{stdin}"
+                msg = f"Sample {n}: timed out after {timeout:.0f}s.\nInput:\n{_compact_debug(stdin)}"
                 return {"verdict": "TLE", "time_ms": None, "memory_kb": None, "reason": msg, "feedback": msg}
             if proc.returncode != 0:
-                msg = f"Sample {n}: runtime error (exit {proc.returncode}).\nInput:\n{stdin}\nStderr:\n{proc.stderr[-1000:]}"
+                msg = (
+                    f"Sample {n}: runtime error (exit {proc.returncode}).\nInput:\n{_compact_debug(stdin)}\n"
+                    f"Stderr:\n{_compact_debug(proc.stderr)}"
+                )
                 return {"verdict": "RE", "time_ms": None, "memory_kb": None, "reason": msg, "feedback": msg}
             if not _is_equal(proc.stdout, expected):
-                msg = (f"Sample {n}: wrong answer.\nInput:\n{stdin}\nExpected output:\n{expected}\n"
-                       f"Your output:\n{proc.stdout[-500:]}")
+                msg = (
+                    f"Sample {n}: wrong answer.\nInput:\n{_compact_debug(stdin)}\n"
+                    f"Expected output:\n{_compact_debug(expected)}\nYour output:\n{_compact_debug(proc.stdout)}"
+                )
                 return {"verdict": "WA", "time_ms": None, "memory_kb": None, "reason": msg, "feedback": msg}
     return None

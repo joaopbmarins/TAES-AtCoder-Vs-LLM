@@ -8,6 +8,13 @@ from pathlib import Path
 from .config import RESULT_FIELDS
 
 
+def compact_text(value: object, limit: int = 1200) -> str:
+    text = "" if value is None else str(value)
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + " ... [truncado]"
+
+
 def read_ids(csv_path: str) -> list[str]:
     with open(csv_path, encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
@@ -40,7 +47,37 @@ def write_results(out_csv: str, rows: dict[str, dict]) -> None:
         w = csv.DictWriter(f, fieldnames=keys)
         w.writeheader()
         for row in rows.values():
-            w.writerow({key: row.get(key, "") for key in keys})
+            sanitized = {}
+            for key in keys:
+                value = row.get(key)
+                if key in {"reason", "feedback"}:
+                    sanitized[key] = compact_text(value)
+                else:
+                    sanitized[key] = value
+            w.writerow(sanitized)
+
+
+def write_error_rows(out_csv: str, rows: dict[str, dict]) -> None:
+    relevant = {
+        pid: row for pid, row in rows.items()
+        if row.get("verdict") not in {None, "AC"} and (row.get("reason") or row.get("feedback"))
+    }
+    if not relevant:
+        Path(out_csv).parent.mkdir(parents=True, exist_ok=True)
+        Path(out_csv).write_text("problem_id,verdict,reason,feedback\n", encoding="utf-8")
+        return
+
+    keys = ["problem_id", "verdict", "reason", "feedback"]
+    with open(out_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=keys)
+        w.writeheader()
+        for pid, row in relevant.items():
+            w.writerow({
+                "problem_id": pid,
+                "verdict": row.get("verdict", ""),
+                "reason": row.get("reason", ""),
+                "feedback": row.get("feedback", ""),
+            })
 
 
 def save_attempt(att_dir: Path, entry: dict) -> None:

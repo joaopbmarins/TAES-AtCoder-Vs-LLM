@@ -8,14 +8,14 @@ from pathlib import Path
 from .config import RECURSION_LIMIT
 from .graph import S, build_graph
 from .scraper import scrape_problem
-from .storage import load_previous, read_ids, save_attempt, save_solution, write_results
+from .storage import compact_text, load_previous, read_ids, save_attempt, save_solution, write_error_rows, write_results
 
 log = logging.getLogger(__name__)
 
 
 def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
         out_dir: str = str(Path("outputs") / "03_loop" / "03_loop_solucoes"), resume: bool = True,
-        delay: float = 1.5, graph_name: str | None = None) -> list[dict]:
+        delay: float = 1.5, graph_name: str | None = None, err_csv: str | None = None) -> list[dict]:
     if submit_fn is None:
         raise ValueError("submit_fn é obrigatório para execução real do loop.")
 
@@ -23,6 +23,8 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
     ids = read_ids(csv_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    err_path = Path(err_csv) if err_csv else Path(out_csv).with_name(f"{Path(out_csv).stem}_erros.csv")
+    err_path.parent.mkdir(parents=True, exist_ok=True)
 
     rows = load_previous(out_csv) if resume else {}
     for n, pid in enumerate(ids, 1):
@@ -56,8 +58,8 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
                 "attempts": final["attempt"],
                 "time_ms": res.get("time_ms"),
                 "memory_kb": res.get("memory_kb"),
-                "reason": res.get("reason") or res.get("feedback") or res["verdict"],
-                "feedback": res.get("feedback"),
+                "reason": compact_text(res.get("reason") or res.get("feedback") or res["verdict"]),
+                "feedback": compact_text(res.get("feedback")),
             }
             if res["verdict"] == "AC":
                 save_solution(out, pid, final["code"])
@@ -72,11 +74,12 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
                 "attempts": saved,
                 "time_ms": None,
                 "memory_kb": None,
-                "reason": str(e),
-                "feedback": str(e),
+                "reason": compact_text(str(e)),
+                "feedback": compact_text(str(e)),
             }
 
         rows[pid] = row
         write_results(out_csv, rows)
+        write_error_rows(str(err_path), rows)
         time.sleep(delay)
     return list(rows.values())

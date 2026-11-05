@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=DESCRIPTION, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", nargs="?", default=str(DEFAULT_PROBLEMS_CSV), help="CSV com a coluna problem_id; padrão: %(default)s")
     ap.add_argument("--out", default=str(Path("outputs") / "03_loop" / "03_loop_resultados.csv"))
+    ap.add_argument("--out-errors", default=None, help="CSV separado para problemas com erro/WA/TLE/RE; padrão: <out>_erros.csv")
     ap.add_argument("--out-dir", default=str(Path("outputs") / "03_loop" / "03_loop_solucoes"))
     ap.add_argument("--provider", choices=["openai", "google", "nvidia"], default="google")
     ap.add_argument("--model", default="gemini-3.8-flash")
@@ -51,6 +52,8 @@ def main(argv: list[str] | None = None) -> None:
 
     out_csv = Path(a.out)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
+    out_errors = Path(a.out_errors) if a.out_errors else out_csv.with_name(f"{out_csv.stem}_erros.csv")
+    out_errors.parent.mkdir(parents=True, exist_ok=True)
     out_dir = Path(a.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -62,7 +65,8 @@ def main(argv: list[str] | None = None) -> None:
         code,
         session_cookie=a.atcoder_session_cookie,
     )
-    rows = run(a.csv, str(out_csv), llm, submit_fn=submit_fn, out_dir=str(out_dir), resume=not a.no_resume, graph_name=a.graph)
+    rows = run(a.csv, str(out_csv), llm, submit_fn=submit_fn, out_dir=str(out_dir), resume=not a.no_resume,
+               graph_name=a.graph, err_csv=str(out_errors))
     ac = sum(r["verdict"] == "AC" for r in rows)
     log.info("Concluído: %d/%d AC", ac, len(rows))
 

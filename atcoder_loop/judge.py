@@ -167,6 +167,7 @@ def _copy_text_to_clipboard(text: str) -> bool:
 
 
 def _wait_for_manual_submission_confirmation(code: str = "") -> None:
+    print("Abra a página de submissão do problema, cole o código, envie a solução e confirme a submissão.")
     if code:
         print("\nCódigo disponível na área de transferência (Ctrl+V para colar no AtCoder).")
         print("Opções: [1] Copiar novamente o código para a área de transferência | [2] Continuar sem copiar")
@@ -177,10 +178,6 @@ def _wait_for_manual_submission_confirmation(code: str = "") -> None:
         elif choice == "2":
             print("Continuando sem copiar; irei consultar a submissão assim que ela aparecer no AtCoder.")
             return
-
-    print("Abra a página de submissão do problema, cole o código, envie a solução e confirme a submissão.")
-    input("Quando a submissão estiver concluída, pressione Enter para continuar e recuperar o resultado...\n")
-
 
 def _handle_manual_captcha(
     session: requests.Session,
