@@ -341,18 +341,23 @@ def _coerce_int(value, unit: str) -> int | None:
     text = str(value).strip()
     if not text:
         return None
-    match = re.search(r"(\d+(?:\.\d+)?)\s*(ms|kb|KB|MB|m|k)?", text, flags=re.IGNORECASE)
-    if match:
-        number = float(match.group(1))
-        unit_text = (match.group(2) or "").lower()
-        if unit == "ms":
+
+    match = re.fullmatch(r"\s*([0-9][0-9,]*(?:\.\d+)?)\s*(ms|kb|kib|mb|mib|m|k)\s*", text, flags=re.IGNORECASE)
+    if not match:
+        return None
+
+    number = float(match.group(1).replace(",", ""))
+    unit_text = match.group(2).lower()
+    if unit == "ms":
+        if unit_text == "ms":
             return int(number)
-        if unit == "kb":
-            if unit_text in {"mb", "m"}:
-                return int(number * 1024)
+        return None
+    if unit == "kb":
+        if unit_text in {"kb", "k", "kib"}:
             return int(number)
-    if text.isdigit():
-        return int(text)
+        if unit_text in {"mb", "m", "mib"}:
+            return int(number * 1024)
+        return None
     return None
 
 
@@ -388,12 +393,12 @@ def _my_submission_rows(session: requests.Session, contest: str) -> list[dict]:
         status_text = label.get_text(" ", strip=True) if label is not None else ""
         time_ms = memory_kb = None
         for cell in (c.get_text(" ", strip=True) for c in tr.find_all("td")):
-            m = re.fullmatch(r"(\d+)\s*ms", cell, flags=re.IGNORECASE)
-            if m:
-                time_ms = int(m.group(1))
-            m = re.fullmatch(r"(\d+)\s*KB", cell, flags=re.IGNORECASE)
-            if m:
-                memory_kb = int(m.group(1))
+            parsed_time = _coerce_int(cell, "ms")
+            if parsed_time is not None:
+                time_ms = parsed_time
+            parsed_memory = _coerce_int(cell, "kb")
+            if parsed_memory is not None:
+                memory_kb = parsed_memory
         rows.append({"id": sub_id, "status_text": status_text, "time_ms": time_ms, "memory_kb": memory_kb})
     rows.sort(key=lambda r: r["id"], reverse=True)
     return rows
