@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from taes.core.models import JudgeResult, Problem
+
 
 class S(TypedDict, total=False):
-    problem: dict
-    result: dict
+    problem: Problem
+    result: JudgeResult
     prompt: str
     code: str
     raw: str

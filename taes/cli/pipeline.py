@@ -8,7 +8,7 @@ CSV uniforme ao longo da pipeline:
   - outputs/03_loop/03_loop_resultados.csv (saída do loop de geração)
 
 Cada etapa pode ser executada isoladamente ou em sequência com:
-  python taes_pipeline.py all --raw-csv submissions.csv --out-dir pipeline
+  taes-pipeline all --raw-csv submissions.csv --out-dir pipeline
 """
 from __future__ import annotations
 
@@ -19,10 +19,19 @@ from pathlib import Path
 
 import pandas as pd
 
-from FiltroSubmissions import processar
-from atCoder_downloader import download_submissions_from_df
-from atcoder_loop.cli import main as run_loop_cli
-from qodana_atcoder import main as run_qodana_cli
+from taes.analysis.qodana import main as run_qodana_cli
+from taes.atcoder.downloader import download_submissions_from_df
+from taes.core.paths import (
+    DEFAULT_FILTERED_SUBMISSIONS,
+    DEFAULT_LOOP_PROBLEMS_CSV,
+    DEFAULT_LOOP_RESULTS_CSV,
+    DEFAULT_LOOP_SOLUTIONS_DIR,
+    DEFAULT_QODANA_REPORT,
+    DOWNLOAD_DIR,
+    OUTPUTS_DIR,
+)
+from taes.loop.cli import main as run_loop_cli
+from taes.pipeline.filtering import processar
 
 
 def export_problem_ids(input_csv: str | Path, out_csv: str | Path) -> str:
@@ -115,7 +124,7 @@ def run_loop_stage(input_csv: str | Path, *, out_csv: str | Path, out_dir: str |
     return str(path)
 
 
-def run_qodana_stage(root: str | Path, *, out: str | Path = str(Path("outputs") / "04_qodana" / "04_qodana_relatorio"), rules_python: str | Path | None = None,
+def run_qodana_stage(root: str | Path, *, out: str | Path = str(DEFAULT_QODANA_REPORT), rules_python: str | Path | None = None,
                      rules_cpp: str | Path | None = None, source_labels: str = "AtCoder=humano,IA=IA",
                      linter_python: str = "jetbrains/qodana-python-community:2026.2",
                      linter_cpp: str = "jetbrains/qodana-clang:2026.2") -> str:
@@ -138,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     filter_p = sub.add_parser("filter", help="Filtra o dataset bruto em um CSV uniforme.")
     filter_p.add_argument("--csv", default="submissions.csv", help="Dataset bruto do AtCoder Problems.")
-    filter_p.add_argument("--out", default=str(Path("outputs") / "01_filter" / "01_filter_filtered_submissions.csv"), help="CSV de saída filtrado.")
+    filter_p.add_argument("--out", default=str(DEFAULT_FILTERED_SUBMISSIONS), help="CSV de saída filtrado.")
     filter_p.add_argument("--contests", nargs="*", help="Ex.: abc300 abc301")
     filter_p.add_argument("--prefixos-contest", nargs="*", help="Ex.: abc arc")
     filter_p.add_argument("--linguagens", nargs="*", help="Ex.: Python PyPy")
@@ -153,18 +162,18 @@ def build_parser() -> argparse.ArgumentParser:
     filter_p.add_argument("--seed", type=int, default=42)
 
     download_p = sub.add_parser("download", help="Baixa os códigos das submissões filtradas.")
-    download_p.add_argument("--input", default=str(Path("outputs") / "01_filter" / "01_filter_filtered_submissions.csv"), help="CSV filtrado de entrada.")
-    download_p.add_argument("--out", default=str(Path("outputs") / "02_download" / "AtCoder"), help="Pasta da árvore de submissões humanas.")
+    download_p.add_argument("--input", default=str(DEFAULT_FILTERED_SUBMISSIONS), help="CSV filtrado de entrada.")
+    download_p.add_argument("--out", default=str(DOWNLOAD_DIR / "AtCoder"), help="Pasta da árvore de submissões humanas.")
     download_p.add_argument("--all-results", action="store_true", help="Baixa também RE/WA/TLE etc.")
 
     problem_p = sub.add_parser("problems", help="Exporta uma lista de problem_id a partir de um CSV de entrada.")
-    problem_p.add_argument("--input", default=str(Path("outputs") / "01_filter" / "01_filter_filtered_submissions.csv"), help="CSV com a coluna problem_id.")
-    problem_p.add_argument("--out", default=str(Path("outputs") / "03_loop" / "03_loop_problems.csv"), help="Arquivo de saída com problem_id.")
+    problem_p.add_argument("--input", default=str(DEFAULT_FILTERED_SUBMISSIONS), help="CSV com a coluna problem_id.")
+    problem_p.add_argument("--out", default=str(DEFAULT_LOOP_PROBLEMS_CSV), help="Arquivo de saída com problem_id.")
 
     loop_p = sub.add_parser("loop", help="Executa o loop de geração/resolução dos problemas.")
-    loop_p.add_argument("--input", default=str(Path("outputs") / "03_loop" / "03_loop_problems.csv"), help="CSV com a coluna problem_id.")
-    loop_p.add_argument("--out", default=str(Path("outputs") / "03_loop" / "03_loop_resultados.csv"), help="CSV de saída do loop.")
-    loop_p.add_argument("--out-dir", default=str(Path("outputs") / "03_loop" / "03_loop_solucoes"), help="Diretório para salvar as soluções.")
+    loop_p.add_argument("--input", default=str(DEFAULT_LOOP_PROBLEMS_CSV), help="CSV com a coluna problem_id.")
+    loop_p.add_argument("--out", default=str(DEFAULT_LOOP_RESULTS_CSV), help="CSV de saída do loop.")
+    loop_p.add_argument("--out-dir", default=str(DEFAULT_LOOP_SOLUTIONS_DIR), help="Diretório para salvar as soluções.")
     loop_p.add_argument("--provider", choices=["openai", "google", "nvidia"], default="google")
     loop_p.add_argument("--model", default="gemini-3.8-flash")
     loop_p.add_argument("--temperature", type=float, default=1.0)
@@ -172,13 +181,13 @@ def build_parser() -> argparse.ArgumentParser:
     loop_p.add_argument("--no-resume", action="store_true")
 
     layout_p = sub.add_parser("ai-layout", help="Copia as soluções AC da IA para outputs/02_download/IA/<contest>/<problem>/.")
-    layout_p.add_argument("--results", default=str(Path("outputs") / "03_loop" / "03_loop_resultados.csv"))
-    layout_p.add_argument("--solutions", default=str(Path("outputs") / "03_loop" / "03_loop_solucoes"))
-    layout_p.add_argument("--target", default=str(Path("outputs") / "02_download" / "IA"))
+    layout_p.add_argument("--results", default=str(DEFAULT_LOOP_RESULTS_CSV))
+    layout_p.add_argument("--solutions", default=str(DEFAULT_LOOP_SOLUTIONS_DIR))
+    layout_p.add_argument("--target", default=str(DOWNLOAD_DIR / "IA"))
 
     qodana_p = sub.add_parser("qodana", help="Executa a comparação Qodana entre código humano e IA.")
-    qodana_p.add_argument("--root", default=str(Path("outputs") / "02_download"), help="Pasta raiz com AtCoder/ e IA/.")
-    qodana_p.add_argument("--out", default=str(Path("outputs") / "04_qodana" / "04_qodana_relatorio"), help="Prefixo dos CSVs de saída do Qodana.")
+    qodana_p.add_argument("--root", default=str(DOWNLOAD_DIR), help="Pasta raiz com AtCoder/ e IA/.")
+    qodana_p.add_argument("--out", default=str(DEFAULT_QODANA_REPORT), help="Prefixo dos CSVs de saída do Qodana.")
     qodana_p.add_argument("--rules-python", type=str, help="Arquivo de regras Python.")
     qodana_p.add_argument("--rules-cpp", type=str, help="Arquivo de regras C/C++.")
     qodana_p.add_argument("--linter-python", default="jetbrains/qodana-python-community:2026.2")
@@ -187,7 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     all_p = sub.add_parser("all", help="Executa filter + download + loop em sequência e opcionalmente Qodana.")
     all_p.add_argument("--raw-csv", default="submissions.csv", help="Dataset bruto do AtCoder Problems.")
-    all_p.add_argument("--out-dir", default=str(Path("outputs") / "00_pipeline"), help="Pasta de trabalho para a pipeline inteira.")
+    all_p.add_argument("--out-dir", default=str(OUTPUTS_DIR / "00_pipeline"), help="Pasta de trabalho para a pipeline inteira.")
     all_p.add_argument("--contests", nargs="*")
     all_p.add_argument("--prefixos-contest", nargs="*")
     all_p.add_argument("--linguagens", nargs="*")

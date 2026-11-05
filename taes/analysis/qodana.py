@@ -16,7 +16,7 @@ Estrutura esperada:
                     claude_01.cpp
 
 Uso:
-    python qodana_atcoder.py ./outputs/02_download \
+    taes-qodana ./outputs/02_download \
         --rules-python rules_py.txt --rules-cpp rules_cpp.txt \
         --linter-python jetbrains/qodana-python-community:2026.2 \
         --linter-cpp jetbrains/qodana-clang:2026.2 --out outputs/04_qodana/04_qodana_relatorio
@@ -28,16 +28,17 @@ Gera:
 """
 import argparse
 import csv
-import re
 import json
+import re
 import shlex
 import shutil
 import subprocess
 import sys
-import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import unquote
+
+from taes.core.paths import DEFAULT_QODANA_REPORT, QODANA_DIR
 
 LEVELS = ["error", "warning", "note", "none"]
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".idea"}
@@ -182,8 +183,8 @@ def build_parser():
                     help="níveis de pasta dentro de cada origem, acima do arquivo (padrão: contest,problem)")
     ap.add_argument("--scope", choices=["contest", "all"], default="contest",
                     help="'contest': uma execução por campeonato; 'all': uma execução por origem")
-    ap.add_argument("--out", default=str(Path("outputs") / "04_qodana" / "04_qodana_relatorio"), help="prefixo dos CSVs de saída")
-    ap.add_argument("--results-root", type=Path, default=Path("outputs") / "04_qodana" / "04_qodana_results")
+    ap.add_argument("--out", default=str(DEFAULT_QODANA_REPORT), help="prefixo dos CSVs de saída")
+    ap.add_argument("--results-root", type=Path, default=QODANA_DIR / "04_qodana_results")
     ap.add_argument("--include-non-ac", action="store_true",
                     help="inclui arquivos <id>_WA/TLE/RE... (por padrão só AC, para casar com a IA, que só tem AC)")
     return ap

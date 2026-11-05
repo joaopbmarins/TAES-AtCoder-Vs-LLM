@@ -11,7 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .config import LOCAL_TIMEOUT_S
+from ...core.config import LOCAL_TIMEOUT_S
 
 
 def _norm(text: str) -> list[str]:

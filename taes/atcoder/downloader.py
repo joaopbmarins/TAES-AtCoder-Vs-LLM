@@ -1,20 +1,19 @@
-import os
-import re
+import argparse
 import csv
 import json
+import os
+import re
 import time
-import argparse
 from pathlib import Path
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
+from taes.core.config import HEADERS
+from taes.core.paths import DEFAULT_FILTERED_SUBMISSIONS
+
 BASE_URL = "https://atcoder.jp"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
-}
 SLEEP = 1.5
 DEFAULT_OUTPUT_DIR = os.path.join("outputs", "02_download", "AtCoder")
 DEFAULT_METADATA_FILENAME = "02_download_atcoder_submissions_metadata.csv"
@@ -223,7 +222,7 @@ def build_problem_url(contest_id: str, problem_id: str) -> str:
 
 
 def export_problem_list_csv(metadata_csv: str, out_csv: str = None) -> str:
-    """Cria um CSV compacto com contest, problem, problem_id, url e submissions_count para uso pelo atcoder_loop."""
+    """Cria um CSV compacto para uso pelo loop de resolução."""
     metadata_path = Path(metadata_csv)
     out_path = Path(out_csv) if out_csv else metadata_path.with_name(DEFAULT_PROBLEM_LIST_FILENAME)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -378,7 +377,7 @@ def download_submissions_from_df(df: pd.DataFrame,
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Baixa submissões do AtCoder.")
-    parser.add_argument("--csv", default=str(Path("outputs") / "01_filter" / "01_filter_filtered_submissions.csv"),
+    parser.add_argument("--csv", default=str(DEFAULT_FILTERED_SUBMISSIONS),
                         help="CSV de entrada com as submissões (colunas: id, contest_id, problem_id, language, result)")
     parser.add_argument("--out", default=DEFAULT_OUTPUT_DIR, help="Pasta de saída")
     parser.add_argument("--all", action="store_true", help="Baixar todas, não apenas AC")

@@ -5,7 +5,7 @@ import csv
 import json
 from pathlib import Path
 
-from .config import RESULT_FIELDS
+from taes.core.config import RESULT_FIELDS
 
 
 def compact_text(value: object, limit: int = 1200) -> str:

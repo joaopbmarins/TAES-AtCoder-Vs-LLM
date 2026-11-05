@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from ..judge import Submitter
+from ...integrations.judge import Submitter
 from .state import S
 
 

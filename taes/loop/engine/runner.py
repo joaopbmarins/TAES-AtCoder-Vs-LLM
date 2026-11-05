@@ -5,16 +5,26 @@ import logging
 import time
 from pathlib import Path
 
-from .config import RECURSION_LIMIT
+from taes.storage.csv import (
+    compact_text,
+    load_previous,
+    read_ids,
+    save_attempt,
+    save_solution,
+    write_error_rows,
+    write_results,
+)
+
+from ...core.config import RECURSION_LIMIT
+from ...core.paths import DEFAULT_LOOP_SOLUTIONS_DIR
+from ..integrations.scraper import scrape_problem
 from .graph import S, build_graph
-from .scraper import scrape_problem
-from .storage import compact_text, load_previous, read_ids, save_attempt, save_solution, write_error_rows, write_results
 
 log = logging.getLogger(__name__)
 
 
 def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
-        out_dir: str = str(Path("outputs") / "03_loop" / "03_loop_solucoes"), resume: bool = True,
+        out_dir: str = str(DEFAULT_LOOP_SOLUTIONS_DIR), resume: bool = True,
         delay: float = 1.5, graph_name: str | None = None, err_csv: str | None = None) -> list[dict]:
     if submit_fn is None:
         raise ValueError("submit_fn é obrigatório para execução real do loop.")

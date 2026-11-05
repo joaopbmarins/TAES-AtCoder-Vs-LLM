@@ -6,3 +6,11 @@
 outputs/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+qodana.yaml
