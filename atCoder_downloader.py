@@ -16,7 +16,7 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 SLEEP = 1.5
-DEFAULT_OUTPUT_DIR = os.path.join("outputs", "02_download", "02_download_atcoder_submissions")
+DEFAULT_OUTPUT_DIR = os.path.join("outputs", "02_download", "AtCoder")
 DEFAULT_METADATA_FILENAME = "02_download_atcoder_submissions_metadata.csv"
 DEFAULT_PROBLEM_LIST_FILENAME = "02_download_atcoder_submissions_problems.csv"
 PROBLEM_LIST_COLUMNS = ["contest", "problem", "problem_id", "url", "submissions_count"]

@@ -1,11 +1,10 @@
 """Grafo exemplo mínimo para demonstrar como adicionar um novo fluxo."""
 from __future__ import annotations
 
-from typing import TypedDict
-
 from langgraph.graph import END, START, StateGraph
 
 from ..judge import Submitter
+from .state import S
 
 
 def dummy_prompt(problem_id: str) -> str:
@@ -16,21 +15,11 @@ def dummy_prompt(problem_id: str) -> str:
     )
 
 
-class S(TypedDict, total=False):
-    problem: dict
-    result: dict
-    prompt: str
-    code: str
-    raw: str
-    attempt: int
-    log: list[dict]
-
-
 def build_dummy_graph(llm, submit_fn: Submitter):
     def dummy_step(s: S) -> S:
         problem_id = str(s.get("problem", {}).get("id", "unknown"))
         result = {
-            "verdict": "AC",
+            "verdict": "DUMMY",
             "time_ms": 0,
             "memory_kb": 0,
             "feedback": "Dummy graph selected. Edit config.py to choose another graph.",

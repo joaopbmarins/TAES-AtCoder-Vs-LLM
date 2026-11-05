@@ -8,7 +8,8 @@ Projeto organizado em scripts independentes, executados manualmente em sequênci
 2. `python atCoder_downloader.py`
 3. `python taes_pipeline.py problems`
 4. `python atcoder_loop.py ...`
-5. `python qodana_atcoder.py ...`
+5. `python taes_pipeline.py ai-layout` (copia as soluções AC da IA para `outputs/02_download/IA/`)
+6. `python qodana_atcoder.py outputs/02_download ...` (a raiz precisa conter `AtCoder/` e `IA/`)
 
 > O helper `taes_pipeline.py all` continua disponível como utilitário opcional, mas o fluxo principal é a execução manual etapa por etapa.
 
@@ -22,7 +23,7 @@ outputs/
 ├── 01_filter/
 │   └── 01_filter_filtered_submissions.csv
 ├── 02_download/
-│   └── 02_download_atcoder_submissions/
+│   └── AtCoder/
 ├── 03_loop/
 │   ├── 03_loop_problems.csv
 │   ├── 03_loop_resultados.csv
@@ -63,9 +64,9 @@ python FiltroSubmissions.py \
 # 2) baixar as submissões
 python atCoder_downloader.py \
   --csv outputs/01_filter/01_filter_filtered_submissions.csv \
-  --out outputs/02_download/02_download_atcoder_submissions \
+  --out outputs/02_download/AtCoder \
   --all
-# gera também outputs/02_download/02_download_atcoder_submissions/02_download_atcoder_submissions_problems.csv
+# gera também outputs/02_download/AtCoder/02_download_atcoder_submissions_problems.csv
 # com as colunas: contest, problem, problem_id, url, submissions_count
 
 # 3) exportar problem_id
@@ -95,15 +96,27 @@ python atcoder_loop.py outputs/03_loop/03_loop_problems.csv \
   --provider google \
   --model gemini-3.8-flash
 
-# 5) comparar humano x IA com Qodana
+# 5) organizar as soluções da IA no layout esperado pelo Qodana
+python taes_pipeline.py ai-layout
+
+# 6) comparar humano x IA com Qodana
 python qodana_atcoder.py \
-  outputs/02_download/02_download_atcoder_submissions \
+  outputs/02_download \
   --rules-python rules_py.txt \
   --rules-cpp rules_cpp.txt \
   --linter-python jetbrains/qodana-python-community:2026.2 \
   --linter-cpp jetbrains/qodana-clang:2026.2 \
   --out outputs/04_qodana/04_qodana_relatorio
 ```
+
+## Notas de metodologia
+
+- **Checagem local:** antes de cada submissão, o código é validado (sintaxe) e executado nos exemplos do enunciado (`LOCAL_PRECHECK` em `config.py`). Falhas locais viram feedback de reparo (traceback, saída esperada x obtida) e **não** gastam submissão no AtCoder; o `verdict` desse caso vem de execução local (campo `source` no log da tentativa).
+- **Feedback do AtCoder:** só o veredito (e tempo/memória); o caso de teste não é revelado.
+- **Linguagem:** a submissão usa CPython por padrão; fixe outra com `ATCODER_LANGUAGE` (substring do rótulo, ex.: `CPython 3.11`). Filtre os humanos com a mesma versão (`--linguagens-exatas`) para comparar tempo/memória.
+- **Amostragem humana:** os caps do filtro são aleatórios e reprodutíveis (`--seed`).
+- **Qodana:** por padrão só arquivos humanos AC entram (`--include-non-ac` desfaz). Linhas = código sem brancos/comentários.
+- **Grafos:** `--graph default|dummy` no CLI (o `dummy` grava veredito `DUMMY`, nunca `AC`). `RECURSION_LIMIT` em `config.py` controla o limite de passos do LangGraph.
 
 ## Seleção do grafo
 
@@ -142,7 +155,5 @@ Essa é a forma oficial e mais confiável de autenticar a submissão real no AtC
 
 ## Arquivos de exemplo
 
-- `submissions.csv` — dataset bruto do AtCoder Problems
-- `problems.example.csv` — lista mínima com `problem_id`
-- `atcoder_problems.csv` — exemplo de entrada para o gerador
+- `submissions.csv` — dataset bruto do AtCoder Problems (baixado automaticamente se não existir)
 
