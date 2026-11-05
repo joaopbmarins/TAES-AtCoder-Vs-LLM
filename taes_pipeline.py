@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 
 from FiltroSubmissions import processar
-from atCoder_downloader import download_submissions_from_df, export_problem_list_csv
+from atCoder_downloader import download_submissions_from_df
 from atcoder_loop.cli import main as run_loop_cli
 from qodana_atcoder import main as run_qodana_cli
 
@@ -64,7 +64,6 @@ def run_download_stage(input_csv: str | Path, output_dir: str | Path, *, all_res
         only_ac=not all_results,
         metadata_csv=str(metadata_csv),
     )
-    export_problem_list_csv(str(metadata_csv), str(output_path / "02_download_atcoder_submissions_problems.csv"))
     return str(metadata_csv)
 
 
@@ -149,10 +148,13 @@ def build_parser() -> argparse.ArgumentParser:
     filter_p.add_argument("--corte")
     filter_p.add_argument("--envio-de")
     filter_p.add_argument("--envio-ate")
+    filter_p.add_argument("--max-por-problema", type=int)
+    filter_p.add_argument("--max-por-contest", type=int)
+    filter_p.add_argument("--seed", type=int, default=42)
 
     download_p = sub.add_parser("download", help="Baixa os códigos das submissões filtradas.")
     download_p.add_argument("--input", default=str(Path("outputs") / "01_filter" / "01_filter_filtered_submissions.csv"), help="CSV filtrado de entrada.")
-    download_p.add_argument("--out", default=str(Path("outputs") / "02_download" / "02_download_atcoder_submissions"), help="Pasta da árvore de submissões humanas.")
+    download_p.add_argument("--out", default=str(Path("outputs") / "02_download" / "AtCoder"), help="Pasta da árvore de submissões humanas.")
     download_p.add_argument("--all-results", action="store_true", help="Baixa também RE/WA/TLE etc.")
 
     problem_p = sub.add_parser("problems", help="Exporta uma lista de problem_id a partir de um CSV de entrada.")
@@ -169,8 +171,13 @@ def build_parser() -> argparse.ArgumentParser:
     loop_p.add_argument("--max-tokens", type=int, default=4096)
     loop_p.add_argument("--no-resume", action="store_true")
 
+    layout_p = sub.add_parser("ai-layout", help="Copia as soluções AC da IA para outputs/02_download/IA/<contest>/<problem>/.")
+    layout_p.add_argument("--results", default=str(Path("outputs") / "03_loop" / "03_loop_resultados.csv"))
+    layout_p.add_argument("--solutions", default=str(Path("outputs") / "03_loop" / "03_loop_solucoes"))
+    layout_p.add_argument("--target", default=str(Path("outputs") / "02_download" / "IA"))
+
     qodana_p = sub.add_parser("qodana", help="Executa a comparação Qodana entre código humano e IA.")
-    qodana_p.add_argument("--root", default=str(Path("outputs") / "02_download" / "02_download_atcoder_submissions"), help="Pasta raiz com AtCoder/ e IA/.")
+    qodana_p.add_argument("--root", default=str(Path("outputs") / "02_download"), help="Pasta raiz com AtCoder/ e IA/.")
     qodana_p.add_argument("--out", default=str(Path("outputs") / "04_qodana" / "04_qodana_relatorio"), help="Prefixo dos CSVs de saída do Qodana.")
     qodana_p.add_argument("--rules-python", type=str, help="Arquivo de regras Python.")
     qodana_p.add_argument("--rules-cpp", type=str, help="Arquivo de regras C/C++.")
@@ -190,8 +197,11 @@ def build_parser() -> argparse.ArgumentParser:
     all_p.add_argument("--corte")
     all_p.add_argument("--envio-de")
     all_p.add_argument("--envio-ate")
-    all_p.add_argument("--loop-provider", choices=["openai", "google", "nvidia"], default="openai")
-    all_p.add_argument("--loop-model", default="gpt-4o-2024-05-13")
+    all_p.add_argument("--max-por-problema", type=int)
+    all_p.add_argument("--max-por-contest", type=int)
+    all_p.add_argument("--seed", type=int, default=42)
+    all_p.add_argument("--loop-provider", choices=["openai", "google", "nvidia"], default="google")
+    all_p.add_argument("--loop-model", default="gemini-3.8-flash")
     all_p.add_argument("--loop-temperature", type=float, default=1.0)
     all_p.add_argument("--loop-max-tokens", type=int, default=4096)
     all_p.add_argument("--no-loop-resume", action="store_true")
@@ -218,6 +228,9 @@ def main(argv=None):
             corte=args.corte,
             envio_de=args.envio_de,
             envio_ate=args.envio_ate,
+            max_por_problema=args.max_por_problema,
+            max_por_contest=args.max_por_contest,
+            seed=args.seed,
         )
         return 0
 
@@ -240,6 +253,10 @@ def main(argv=None):
             max_tokens=args.max_tokens,
             no_resume=args.no_resume,
         )
+        return 0
+
+    if args.stage == "ai-layout":
+        prepare_ai_layout(args.results, args.solutions, args.target)
         return 0
 
     if args.stage == "qodana":
@@ -272,6 +289,9 @@ def main(argv=None):
             corte=args.corte,
             envio_de=args.envio_de,
             envio_ate=args.envio_ate,
+            max_por_problema=args.max_por_problema,
+            max_por_contest=args.max_por_contest,
+            seed=args.seed,
         )
 
         download_dir = workspace / "02_download" / "AtCoder"

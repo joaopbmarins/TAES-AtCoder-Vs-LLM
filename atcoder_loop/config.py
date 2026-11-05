@@ -4,6 +4,10 @@ MAX_ATTEMPTS = 5            # tentativas por problema (1 geração + até 4 repa
 MAX_FEEDBACK_CHARS = 2000   # tamanho máximo do feedback de erro enviado no prompt de reparo
 FENCE = "`" * 3
 
+LOCAL_PRECHECK = True       # roda sintaxe + exemplos localmente antes de submeter ao AtCoder
+LOCAL_TIMEOUT_S = 10.0      # timeout por exemplo na checagem local
+RECURSION_LIMIT = 100       # limite de passos do LangGraph (padrão 25 estoura com grafos multiagente)
+
 GRAPH_NAME = "default"     # opções disponíveis: default, dummy
 AVAILABLE_GRAPHS = ("default", "dummy")
 

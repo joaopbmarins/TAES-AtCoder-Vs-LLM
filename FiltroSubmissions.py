@@ -53,10 +53,14 @@ def para_epoch(valor, fim=False):
     return int(ts.timestamp())
 
 
-contests = pd.DataFrame(requests.get(CONTESTS).json())
-inicio = (contests[["id", "start_epoch_second"]]
-          .rename(columns={"id": "contest_id",
-                           "start_epoch_second": "contest_start_epoch"}))
+def carregar_inicio_contests():
+    """Baixa (sob demanda, não no import) o início de cada contest."""
+    resp = requests.get(CONTESTS, timeout=60)
+    resp.raise_for_status()
+    contests = pd.DataFrame(resp.json())
+    return (contests[["id", "start_epoch_second"]]
+            .rename(columns={"id": "contest_id",
+                             "start_epoch_second": "contest_start_epoch"}))
 
 
 def _prioridade_resultado(valor):
@@ -68,12 +72,16 @@ def _prioridade_resultado(valor):
     return ordem.get(texto, 99)
 
 
-def _aplicar_caps(df, max_por_problema=None, max_por_contest=None):
-    """Aplica deduplicação por usuário/problema e limita o número de linhas."""
+def _aplicar_caps(df, max_por_problema=None, max_por_contest=None, seed=42):
+    """Aplica deduplicação por usuário/problema e limita o número de linhas.
+
+    Embaralha com seed fixa antes de ordenar (a ordenação é estável): dentro de cada nível de
+    prioridade a escolha é aleatória e reprodutível, em vez de favorecer quem submeteu primeiro.
+    """
     if df.empty:
         return df
 
-    df = df.copy()
+    df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
 
     if "result" in df.columns:
         df["_resultado_ordem"] = df["result"].map(_prioridade_resultado)
@@ -82,24 +90,25 @@ def _aplicar_caps(df, max_por_problema=None, max_por_contest=None):
 
     if {"contest_id", "problem_id", "user_id"}.issubset(df.columns):
         df = df.sort_values(
-            ["contest_id", "problem_id", "user_id", "_resultado_ordem", "epoch_second"],
-            ascending=[True, True, True, True, True],
+            ["contest_id", "problem_id", "user_id", "_resultado_ordem"],
+            ascending=[True, True, True, True],
             kind="mergesort",
         )
         df = df.drop_duplicates(subset=["contest_id", "problem_id", "user_id"], keep="first")
 
     if max_por_problema is not None and {"contest_id", "problem_id"}.issubset(df.columns):
         df = df.sort_values(
-            ["contest_id", "problem_id", "_resultado_ordem", "epoch_second"],
-            ascending=[True, True, True, True],
+            ["contest_id", "problem_id", "_resultado_ordem"],
+            ascending=[True, True, True],
             kind="mergesort",
         )
         df = df.groupby(["contest_id", "problem_id"], group_keys=False).head(max_por_problema)
 
     if max_por_contest is not None and "contest_id" in df.columns:
+        df = df.sample(frac=1, random_state=seed)  # evita favorecer os primeiros problemas (a, b, ...)
         df = df.sort_values(
-            ["contest_id", "_resultado_ordem", "epoch_second"],
-            ascending=[True, True, True],
+            ["contest_id", "_resultado_ordem"],
+            ascending=[True, True],
             kind="mergesort",
         )
         df = df.groupby("contest_id", group_keys=False).head(max_por_contest)
@@ -120,13 +129,14 @@ def processar(
     max_por_contest=None,     # no máximo de submissões por contest
     saida=str(Path(DEFAULT_OUTPUT_DIR) / DEFAULT_FILTERED_FILENAME),
     dataset_path=None,
+    seed=42,
 ):
     if max_por_problema is not None and max_por_problema <= 0:
         raise ValueError("max_por_problema deve ser maior que zero.")
     if max_por_contest is not None and max_por_contest <= 0:
         raise ValueError("max_por_contest deve ser maior que zero.")
 
-    subs = dataset_path if dataset_path is not None else garantir_dataset()  # .csv ou .csv.gz; baixa se faltar
+    subs = dataset_path if dataset_path is not None and os.path.exists(dataset_path) else garantir_dataset()  # .csv ou .csv.gz; baixa se faltar
 
     # evita sobrar arquivo antigo de uma execução anterior
     saida_path = Path(saida)
@@ -141,6 +151,7 @@ def processar(
     if envio_de_epoch and envio_ate_epoch and envio_de_epoch >= envio_ate_epoch:
         raise ValueError("envio_de deve ser anterior a envio_ate.")
 
+    inicio = carregar_inicio_contests()
     blocos = []
     for bloco in pd.read_csv(subs, chunksize=1_000_000):   # pandas detecta o .gz pela extensão
         # filtros baratos primeiro
@@ -181,7 +192,7 @@ def processar(
 
     final = pd.concat(blocos, ignore_index=True)
     if max_por_problema is not None or max_por_contest is not None:
-        final = _aplicar_caps(final, max_por_problema=max_por_problema, max_por_contest=max_por_contest)
+        final = _aplicar_caps(final, max_por_problema=max_por_problema, max_por_contest=max_por_contest, seed=seed)
 
     final.to_csv(saida, index=False)
     print(f"Gerado: {saida}")
@@ -204,6 +215,7 @@ def build_parser():
     ap.add_argument("--envio-ate", help="Limite superior da janela de envio (YYYY-MM-DD ou YYYY-MM-DD HH:MM).")
     ap.add_argument("--max-por-problema", type=int, help="Mantém no máximo N submissões por contest+problem (ex.: 10).")
     ap.add_argument("--max-por-contest", type=int, help="Mantém no máximo N submissões por contest (ex.: 100).")
+    ap.add_argument("--seed", type=int, default=42, help="Seed da amostragem aleatória dos caps.")
     return ap
 
 
@@ -223,6 +235,7 @@ def main(argv=None):
         max_por_contest=args.max_por_contest,
         saida=args.out,
         dataset_path=args.csv,
+        seed=args.seed,
     )
     return args.out
 

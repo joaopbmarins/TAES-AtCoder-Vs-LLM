@@ -23,7 +23,7 @@ else:
 log = logging.getLogger("atcoder_loop")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PROBLEMS_CSV = PROJECT_ROOT / "outputs" / "02_download" / "02_download_atcoder_submissions" / "02_download_atcoder_submissions_problems.csv"
+DEFAULT_PROBLEMS_CSV = PROJECT_ROOT / "outputs" / "02_download" / "AtCoder" / "02_download_atcoder_submissions_problems.csv"
 
 DESCRIPTION = """CSV de ids -> scraping no AtCoder -> loop gerar/submeter/reparar.
 
@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--max-tokens", type=int, default=4096)
     ap.add_argument("--atcoder-session-cookie", help="Cookie/jar de sessão já autenticada do AtCoder.")
+    ap.add_argument("--graph", default=None, help="grafo a usar (padrão: GRAPH_NAME de config.py)")
     ap.add_argument("--no-resume", action="store_true", help="refaz também os problemas já resolvidos")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
@@ -61,7 +62,7 @@ def main(argv: list[str] | None = None) -> None:
         code,
         session_cookie=a.atcoder_session_cookie,
     )
-    rows = run(a.csv, str(out_csv), llm, submit_fn=submit_fn, out_dir=str(out_dir), resume=not a.no_resume)
+    rows = run(a.csv, str(out_csv), llm, submit_fn=submit_fn, out_dir=str(out_dir), resume=not a.no_resume, graph_name=a.graph)
     ac = sum(r["verdict"] == "AC" for r in rows)
     log.info("Concluído: %d/%d AC", ac, len(rows))
 

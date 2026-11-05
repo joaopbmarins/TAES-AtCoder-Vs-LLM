@@ -34,6 +34,11 @@ def scrape_problem(problem_id: str) -> dict:
     if root is None:
         raise ValueError(f"enunciado não encontrado em {url}")
 
+    for ja in root.select(".lang-ja"):  # a página traz os dois idiomas no HTML
+        ja.decompose()
+    title_el = soup.select_one("title")
+    title = title_el.get_text(strip=True) if title_el else ""
+
     # AtCoder pode renderizar os títulos dos exemplos vazios em algumas páginas;
     # quando isso acontece, usamos a ordem das partes da seção de I/O como fallback.
     ins: dict[int, str] = {}
@@ -70,4 +75,4 @@ def scrape_problem(problem_id: str) -> dict:
         samples = [(ins.get(n, "") + "\n", outs.get(n, "")) for n in numbers if n in ins and n in outs]
 
     statement = re.sub(r"\n{3,}", "\n\n", root.get_text("\n")).strip()
-    return {"id": problem_id, "contest": contest, "statement": statement, "samples": samples}
+    return {"id": problem_id, "contest": contest, "title": title, "statement": statement, "samples": samples}

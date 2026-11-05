@@ -5,6 +5,7 @@ import logging
 import time
 from pathlib import Path
 
+from .config import RECURSION_LIMIT
 from .graph import S, build_graph
 from .scraper import scrape_problem
 from .storage import load_previous, read_ids, save_attempt, save_solution, write_results
@@ -40,7 +41,7 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
 
             log.info("[%d/%d] %s: iniciando grafo do modelo", n, len(ids), pid)
             final: S = {}
-            for step_idx, state in enumerate(graph.stream({"problem": problem}, stream_mode="values"), 1):
+            for step_idx, state in enumerate(graph.stream({"problem": problem}, config={"recursion_limit": RECURSION_LIMIT}, stream_mode="values"), 1):
                 final = state
                 log.info("[%d/%d] %s: passo do grafo #%d; log_entries=%d; attempt=%s", n, len(ids), pid, step_idx,
                          len(state.get("log", [])), state.get("attempt"))

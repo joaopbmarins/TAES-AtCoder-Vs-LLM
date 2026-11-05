@@ -49,7 +49,6 @@ def build_llm(provider: str, model: str, temperature: float, max_tokens: int):
             api_key=api_key,
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=0.7,
         )
     raise ValueError(f"provider desconhecido: {provider}")
 
@@ -63,6 +62,12 @@ def message_text(content) -> str:
     return str(content)
 
 
+def _is_non_retryable(exc: Exception) -> bool:
+    """Erros de autenticação/requisição inválida não se resolvem repetindo."""
+    status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+    return status in {400, 401, 403, 404}
+
+
 def invoke_with_retry(llm, prompt: str, retries: int = 3) -> str:
     model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None) or type(llm).__name__
     log.info("[LLM] iniciando chamada para modelo=%s, prompt_chars=%d, tentativas=%d", model_name, len(prompt), retries)
@@ -74,9 +79,9 @@ def invoke_with_retry(llm, prompt: str, retries: int = 3) -> str:
             return text
         except Exception as e:  # rate limit, 5xx, timeout...
             log.warning("[LLM] falha no modelo=%s (tentativa=%d/%d): %s", model_name, k + 1, retries, e)
-            if k == retries - 1:
+            if _is_non_retryable(e) or k == retries - 1:
                 raise
             wait = 2 ** (k + 1)
             log.warning("[LLM] nova tentativa em %ss", wait)
             time.sleep(wait)
-    return ""
+    raise RuntimeError("invoke_with_retry: retries deve ser >= 1")

@@ -3,7 +3,7 @@
 Compara code smells de submissões aceitas no AtCoder (humanos x IA) com o JetBrains Qodana.
 
 Estrutura esperada:
-    outputs/02_download/02_download_atcoder_submissions/
+    outputs/02_download/AtCoder/
         AtCoder/                 -> submissões humanas
             abc300/
                 a/
@@ -16,7 +16,7 @@ Estrutura esperada:
                     claude_01.cpp
 
 Uso:
-    python qodana_atcoder.py ./outputs/02_download/02_download_atcoder_submissions \
+    python qodana_atcoder.py ./outputs/02_download \
         --rules-python rules_py.txt --rules-cpp rules_cpp.txt \
         --linter-python jetbrains/qodana-python-community:2026.2 \
         --linter-cpp jetbrains/qodana-clang:2026.2 --out outputs/04_qodana/04_qodana_relatorio
@@ -28,6 +28,7 @@ Gera:
 """
 import argparse
 import csv
+import re
 import json
 import shlex
 import shutil
@@ -51,7 +52,8 @@ def load_rules(path: Path) -> list[str]:
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.split("#", 1)[0].strip()
         if line:
-            rules.append(line)
+            # o Qodana/SARIF usa o shortName da inspeção, sem o sufixo "Inspection"
+            rules.append(line.removesuffix("Inspection"))
     return rules
 
 
@@ -63,16 +65,23 @@ def write_qodana_yaml(dest: Path, linter: str, rules: list[str]) -> None:
     dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def find_files(base: Path, exts: set[str]) -> list[Path]:
+def find_files(base: Path, exts: set[str], only_ac: bool = True) -> list[Path]:
     return sorted(p for p in base.rglob("*")
                   if p.is_file() and p.suffix.lower() in exts
+                  and not (only_ac and NON_AC_NAME.search(p.stem))
                   and not any(part in IGNORED_DIRS for part in p.relative_to(base).parts))
 
 
+COMMENT_PREFIXES = {".py": "#", ".c": "//", ".cc": "//", ".cpp": "//", ".cxx": "//"}
+NON_AC_NAME = re.compile(r"_(WA|TLE|RE|CE|MLE|OLE|QLE|IE|WJ)$")
+
+
 def count_lines(path: Path) -> int:
+    """Linhas de código (ncloc aproximado): ignora linhas em branco e só-comentário, como o artigo."""
+    prefix = COMMENT_PREFIXES.get(path.suffix.lower(), "#")
     try:
-        with path.open("rb") as f:
-            return sum(1 for _ in f)
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            return sum(1 for line in f if line.strip() and not line.strip().startswith(prefix))
     except OSError:
         return 0
 
@@ -175,6 +184,8 @@ def build_parser():
                     help="'contest': uma execução por campeonato; 'all': uma execução por origem")
     ap.add_argument("--out", default=str(Path("outputs") / "04_qodana" / "04_qodana_relatorio"), help="prefixo dos CSVs de saída")
     ap.add_argument("--results-root", type=Path, default=Path("outputs") / "04_qodana" / "04_qodana_results")
+    ap.add_argument("--include-non-ac", action="store_true",
+                    help="inclui arquivos <id>_WA/TLE/RE... (por padrão só AC, para casar com a IA, que só tem AC)")
     return ap
 
 
@@ -223,7 +234,7 @@ def main(argv=None):
 
             for project, prefix in units:
                 for group, cfg in group_cfg.items():
-                    files = find_files(project, GROUPS[group]["exts"])
+                    files = find_files(project, GROUPS[group]["exts"], only_ac=not args.include_non_ac)
                     if not files:
                         continue
                     print(f"[+] {src_dir}/{prefix}/{group}: {len(files)} arquivos ...".replace("//", "/"), flush=True)
@@ -260,6 +271,13 @@ def main(argv=None):
                     issues, error = {}, ""
                     if sarif.exists():
                         issues = parse_sarif(sarif)
+                        known = set(cfg["rules"])
+                        seen_rules = {r for by_rule, _ in issues.values() for r in by_rule}
+                        if seen_rules - known:
+                            print(f"    [!] ruleIds fora da lista de regras: {sorted(seen_rules - known)}")
+                        if len(files) >= 20 and not issues:
+                            print(f"    [!] ATENÇÃO: 0 problemas em {len(files)} arquivos ({src_dir}/{prefix}/{group}); "
+                                  "confira se os nomes em rules_*.txt batem com os ruleId do SARIF.")
                     else:
                         tail = (proc.stderr or proc.stdout or "sem SARIF").strip()[-300:].replace("\n", " ")
                         error = f"log completo: {results_dir / 'qodana.log'} | {tail}"

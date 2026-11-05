@@ -104,7 +104,7 @@ Baixa o código-fonte das submissões do AtCoder e salva em uma árvore de diret
 ```bash
 python atCoder_downloader.py \
   --csv outputs/01_filter/01_filter_filtered_submissions.csv \
-  --out outputs/02_download/02_download_atcoder_submissions \
+  --out outputs/02_download/AtCoder \
   --all
 ```
 
@@ -134,7 +134,7 @@ O script cria:
 ```bash
 python atCoder_downloader.py \
   --csv outputs/01_filter/01_filter_filtered_submissions.csv \
-  --out outputs/02_download/02_download_atcoder_submissions
+  --out outputs/02_download/AtCoder
 ```
 
 #### Baixar tudo, inclusive WA/TLE/RE
@@ -142,7 +142,7 @@ python atCoder_downloader.py \
 ```bash
 python atCoder_downloader.py \
   --csv outputs/01_filter/01_filter_filtered_submissions.csv \
-  --out outputs/02_download/02_download_atcoder_submissions \
+  --out outputs/02_download/AtCoder \
   --all
 ```
 
@@ -262,7 +262,7 @@ Compara padrões de código entre submissões humanas e submissões geradas por 
 
 ```bash
 python qodana_atcoder.py \
-  outputs/02_download/02_download_atcoder_submissions \
+  outputs/02_download \
   --rules-python rules_py.txt \
   --rules-cpp rules_cpp.txt \
   --linter-python jetbrains/qodana-python-community:2026.2 \
@@ -306,7 +306,7 @@ O script produz:
 
 ```bash
 python qodana_atcoder.py \
-  outputs/02_download/02_download_atcoder_submissions \
+  outputs/02_download \
   --sources AtCoder=humano,IA=IA \
   --rules-python rules_py.txt \
   --rules-cpp rules_cpp.txt \
@@ -363,7 +363,7 @@ Parâmetros:
 ```bash
 python taes_pipeline.py download \
   --input outputs/01_filter/01_filter_filtered_submissions.csv \
-  --out outputs/02_download/02_download_atcoder_submissions \
+  --out outputs/02_download/AtCoder \
   --all-results
 ```
 
@@ -412,7 +412,7 @@ Parâmetros:
 
 ```bash
 python taes_pipeline.py qodana \
-  outputs/02_download/02_download_atcoder_submissions \
+  outputs/02_download \
   --rules-python rules_py.txt \
   --rules-cpp rules_cpp.txt \
   --linter-python jetbrains/qodana-python-community:2026.2 \
@@ -477,7 +477,7 @@ python FiltroSubmissions.py \
 
 python atCoder_downloader.py \
   --csv outputs/01_filter/01_filter_filtered_submissions.csv \
-  --out outputs/02_download/02_download_atcoder_submissions \
+  --out outputs/02_download/AtCoder \
   --all
 
 python taes_pipeline.py problems \
@@ -491,7 +491,7 @@ python atcoder_loop.py outputs/03_loop/03_loop_problems.csv \
   --model gemini-3.8-flash
 
 python qodana_atcoder.py \
-  outputs/02_download/02_download_atcoder_submissions \
+  outputs/02_download \
   --rules-python rules_py.txt \
   --rules-cpp rules_cpp.txt \
   --linter-python jetbrains/qodana-python-community:2026.2 \
@@ -531,5 +531,3 @@ python taes_pipeline.py all \
 - `rules_py.txt` — regras de inspeção do Qodana para Python
 - `rules_cpp.txt` — regras de inspeção do Qodana para C++
 - `submissions.csv` — dataset bruto do AtCoder Problems
-
-Se você quiser, posso transformar este guia em uma versão mais curta, com uma tabela centralizada de parâmetros por script, ou em um README mais visual e profissional.
