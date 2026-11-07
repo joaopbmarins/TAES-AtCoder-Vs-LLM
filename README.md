@@ -64,6 +64,12 @@ Todos os caminhos padrão ficam centralizados em
 [`taes/core/paths.py`](./taes/core/paths.py), e os resultados são gravados em
 `outputs/`.
 
+As etapas são seguras para reexecução: downloads já registrados no metadata são
+ignorados, o loop retoma problemas aceitos, e CSVs, códigos e logs são
+substituídos atomicamente. Assim, uma interrupção não deixa um arquivo final
+parcial. Para recalcular uma etapa de filtragem, remova explicitamente seu
+arquivo de saída antes de executá-la novamente; para o loop, use `--no-resume`.
+
 ## Desenvolvimento
 
 ```bash

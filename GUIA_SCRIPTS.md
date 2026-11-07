@@ -50,3 +50,12 @@ Os artefatos ficam em `outputs/`:
 - `02_download/`: código humano e layout de comparação;
 - `03_loop/`: problemas, resultados, tentativas e soluções da IA;
 - `04_qodana/`: relatórios e resultados da análise.
+
+## Reexecução e recuperação
+
+Os comandos podem ser executados novamente sem duplicar downloads ou linhas de
+metadata. O download usa o metadata e o loop retoma problemas já aceitos.
+Arquivos finais são escritos por substituição atômica, preservando a última
+execução completa em caso de interrupção. Para forçar novo processamento do
+loop, use `--no-resume`; para refazer o filtro, remova o CSV de saída e execute
+`taes-pipeline filter` novamente.

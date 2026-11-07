@@ -21,6 +21,7 @@ import pandas as pd
 
 from taes.analysis.qodana import main as run_qodana_cli
 from taes.atcoder.downloader import download_submissions_from_df
+from taes.core.files import atomic_replace
 from taes.core.paths import (
     DEFAULT_FILTERED_SUBMISSIONS,
     DEFAULT_LOOP_PROBLEMS_CSV,
@@ -34,15 +35,26 @@ from taes.loop.cli import main as run_loop_cli
 from taes.pipeline.filtering import processar
 
 
+def _require_input_file(path: str | Path, description: str, next_command: str) -> Path:
+    input_path = Path(path)
+    if input_path.is_file():
+        return input_path
+    raise FileNotFoundError(
+        f"{description} não encontrado: {input_path}\n"
+        f"Execute primeiro: {next_command}"
+    )
+
+
 def export_problem_ids(input_csv: str | Path, out_csv: str | Path) -> str:
-    df = pd.read_csv(input_csv)
+    input_path = _require_input_file(input_csv, "CSV filtrado", "taes-pipeline filter")
+    df = pd.read_csv(input_path)
     if "problem_id" not in df.columns:
         raise ValueError(f"CSV '{input_csv}' não contém a coluna 'problem_id'.")
     ids = df["problem_id"].dropna().astype(str).str.strip()
     ids = ids[ids.ne("")].drop_duplicates()
     out = Path(out_csv)
     out.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame({"problem_id": ids.tolist()}).to_csv(out, index=False)
+    atomic_replace(out, lambda path: pd.DataFrame({"problem_id": ids.tolist()}).to_csv(path, index=False))
     return str(out)
 
 
@@ -57,11 +69,23 @@ def run_filter_stage(raw_csv: str | Path, out_csv: str | Path, **kwargs) -> str:
     return str(out)
 
 
-def run_download_stage(input_csv: str | Path, output_dir: str | Path, *, all_results: bool = False) -> str:
+def run_download_stage(
+    input_csv: str | Path,
+    output_dir: str | Path,
+    *,
+    all_results: bool = False,
+    workers: int = 4,
+    delay: float = 1.5,
+) -> str:
     input_path = Path(input_csv)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
+    input_path = _require_input_file(
+        input_path,
+        "CSV filtrado",
+        "taes-pipeline filter",
+    )
     df = pd.read_csv(input_path)
     if "id" not in df.columns:
         raise ValueError(f"CSV '{input_csv}' não contém a coluna 'id'. O download precisa de id, contest_id, problem_id, language e result.")
@@ -72,12 +96,18 @@ def run_download_stage(input_csv: str | Path, output_dir: str | Path, *, all_res
         output_dir=str(output_path),
         only_ac=not all_results,
         metadata_csv=str(metadata_csv),
+        workers=workers,
+        delay=delay,
     )
     return str(metadata_csv)
 
 
 def prepare_ai_layout(results_csv: str | Path, from_dir: str | Path, target_root: str | Path) -> Path:
-    results_path = Path(results_csv)
+    results_path = _require_input_file(
+        results_csv,
+        "CSV de resultados",
+        "taes-pipeline loop",
+    )
     source_dir = Path(from_dir)
     target_root = Path(target_root)
     if not results_path.exists():
@@ -98,7 +128,7 @@ def prepare_ai_layout(results_csv: str | Path, from_dir: str | Path, target_root
         contest = pid.rsplit("_", 1)[0]
         target = target_root / contest / pid / chosen.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(chosen, target)
+        atomic_replace(target, lambda path: shutil.copyfile(chosen, path))
     return target_root
 
 
@@ -165,6 +195,8 @@ def build_parser() -> argparse.ArgumentParser:
     download_p.add_argument("--input", default=str(DEFAULT_FILTERED_SUBMISSIONS), help="CSV filtrado de entrada.")
     download_p.add_argument("--out", default=str(DOWNLOAD_DIR / "AtCoder"), help="Pasta da árvore de submissões humanas.")
     download_p.add_argument("--all-results", action="store_true", help="Baixa também RE/WA/TLE etc.")
+    download_p.add_argument("--workers", type=int, default=4, help="Downloads simultâneos.")
+    download_p.add_argument("--delay", type=float, default=1.5, help="Intervalo por worker após cada request.")
 
     problem_p = sub.add_parser("problems", help="Exporta uma lista de problem_id a partir de um CSV de entrada.")
     problem_p.add_argument("--input", default=str(DEFAULT_FILTERED_SUBMISSIONS), help="CSV com a coluna problem_id.")
@@ -203,6 +235,8 @@ def build_parser() -> argparse.ArgumentParser:
     all_p.add_argument("--linguagens-exatas", nargs="*")
     all_p.add_argument("--resultados", nargs="*")
     all_p.add_argument("--all-results", action="store_true")
+    all_p.add_argument("--download-workers", type=int, default=4, help="Downloads simultâneos.")
+    all_p.add_argument("--download-delay", type=float, default=1.5, help="Intervalo por worker após cada request.")
     all_p.add_argument("--corte")
     all_p.add_argument("--envio-de")
     all_p.add_argument("--envio-ate")
@@ -244,7 +278,7 @@ def main(argv=None):
         return 0
 
     if args.stage == "download":
-        run_download_stage(args.input, args.out, all_results=args.all_results)
+        run_download_stage(args.input, args.out, all_results=args.all_results, workers=args.workers, delay=args.delay)
         return 0
 
     if args.stage == "problems":
@@ -283,10 +317,12 @@ def main(argv=None):
     if args.stage == "all":
         workspace = Path(args.out_dir)
         workspace.mkdir(parents=True, exist_ok=True)
+        print(f"Iniciando pipeline completa em: {workspace}", flush=True)
 
         filter_dir = workspace / "01_filter"
         filter_dir.mkdir(parents=True, exist_ok=True)
         filtered_csv = filter_dir / "01_filter_filtered_submissions.csv"
+        print("\n[1/5] Filtrando dataset...", flush=True)
         run_filter_stage(
             args.raw_csv,
             filtered_csv,
@@ -305,15 +341,24 @@ def main(argv=None):
 
         download_dir = workspace / "02_download" / "AtCoder"
         download_dir.mkdir(parents=True, exist_ok=True)
-        run_download_stage(filtered_csv, download_dir, all_results=args.all_results)
+        print("\n[2/5] Baixando submissões...", flush=True)
+        run_download_stage(
+            filtered_csv,
+            download_dir,
+            all_results=args.all_results,
+            workers=args.download_workers,
+            delay=args.download_delay,
+        )
 
         loop_dir = workspace / "03_loop"
         loop_dir.mkdir(parents=True, exist_ok=True)
         problems_csv = loop_dir / "03_loop_problems.csv"
+        print("\n[3/5] Preparando lista de problemas...", flush=True)
         export_problem_ids(filtered_csv, problems_csv)
 
         loop_out = loop_dir / "03_loop_resultados.csv"
         solutions_dir = loop_dir / "03_loop_solucoes"
+        print("\n[4/5] Executando loop de geração...", flush=True)
         run_loop_stage(
             problems_csv,
             out_csv=loop_out,
@@ -325,9 +370,11 @@ def main(argv=None):
             no_resume=args.no_loop_resume,
         )
 
+        print("\n[5/5] Preparando layout das soluções IA...", flush=True)
         prepare_ai_layout(loop_out, solutions_dir, workspace / "02_download" / "IA")
 
         if args.with_qodana:
+            print("\n[extra] Executando Qodana...", flush=True)
             qodana_dir = workspace / "04_qodana"
             qodana_dir.mkdir(parents=True, exist_ok=True)
             run_qodana_stage(

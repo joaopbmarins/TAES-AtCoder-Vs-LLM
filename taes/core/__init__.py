@@ -12,6 +12,7 @@ from .config import (
     RECURSION_LIMIT,
     RESULT_FIELDS,
 )
+from .files import atomic_replace
 from .models import JudgeResult, Problem, Sample
 from .paths import (
     DEFAULT_FILTERED_SUBMISSIONS,
@@ -30,6 +31,7 @@ from .paths import (
 
 __all__ = [
     "AVAILABLE_GRAPHS",
+    "atomic_replace",
     "DEFAULT_FILTERED_SUBMISSIONS",
     "DEFAULT_LOOP_PROBLEMS_CSV",
     "DEFAULT_LOOP_RESULTS_CSV",

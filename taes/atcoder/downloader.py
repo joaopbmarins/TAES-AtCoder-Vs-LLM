@@ -3,7 +3,9 @@ import csv
 import json
 import os
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
@@ -11,10 +13,12 @@ import requests
 from bs4 import BeautifulSoup
 
 from taes.core.config import HEADERS
+from taes.core.files import atomic_replace
 from taes.core.paths import DEFAULT_FILTERED_SUBMISSIONS
 
 BASE_URL = "https://atcoder.jp"
 SLEEP = 1.5
+DEFAULT_WORKERS = 4
 DEFAULT_OUTPUT_DIR = os.path.join("outputs", "02_download", "AtCoder")
 DEFAULT_METADATA_FILENAME = "02_download_atcoder_submissions_metadata.csv"
 DEFAULT_PROBLEM_LIST_FILENAME = "02_download_atcoder_submissions_problems.csv"
@@ -47,8 +51,16 @@ CSV_COLUMNS = [
     "arquivo",
 ]
 
-session = requests.Session()
-session.headers.update(HEADERS)
+_thread_state = threading.local()
+
+
+def _session() -> requests.Session:
+    current = getattr(_thread_state, "session", None)
+    if current is None:
+        current = requests.Session()
+        current.headers.update(HEADERS)
+        _thread_state.session = current
+    return current
 
 
 # --------------------------------------------------------------------------
@@ -72,7 +84,7 @@ def normalize(text: str) -> str:
 
 
 def get_page(url: str) -> BeautifulSoup:
-    r = session.get(url, timeout=30)
+    r = _session().get(url, timeout=30)
     if r.status_code != 200:
         raise Exception(f"Falha ao carregar {url} (status {r.status_code})")
     return BeautifulSoup(r.text, "html.parser")
@@ -187,10 +199,10 @@ def list_contests(df: pd.DataFrame, cache_path: str):
 def load_done_ids(csv_path: str) -> set:
     if not os.path.exists(csv_path):
         return set()
-    try:
-        return set(pd.read_csv(csv_path)["codigo_submissao"].astype(int))
-    except Exception:
-        return set()
+    metadata = pd.read_csv(csv_path)
+    if "codigo_submissao" not in metadata.columns:
+        raise ValueError(f"Metadata inválida: coluna 'codigo_submissao' ausente em {csv_path}")
+    return set(metadata["codigo_submissao"].dropna().astype(int))
 
 
 def migrate_csv_if_needed(csv_path: str):
@@ -204,7 +216,10 @@ def migrate_csv_if_needed(csv_path: str):
         # a sigla é a primeira pasta do caminho do arquivo
         old["sigla_campeonato"] = old["arquivo"].astype(str).str.split(r"[\\/]").str[0]
     old = old.reindex(columns=CSV_COLUMNS)
-    old.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    atomic_replace(
+        csv_path,
+        lambda path: old.to_csv(path, index=False, encoding="utf-8-sig"),
+    )
 
 
 def append_csv_row(csv_path: str, row: dict):
@@ -228,7 +243,12 @@ def export_problem_list_csv(metadata_csv: str, out_csv: str = None) -> str:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not metadata_path.exists():
-        pd.DataFrame(columns=PROBLEM_LIST_COLUMNS).to_csv(out_path, index=False, encoding="utf-8-sig")
+        atomic_replace(
+            out_path,
+            lambda path: pd.DataFrame(columns=PROBLEM_LIST_COLUMNS).to_csv(
+                path, index=False, encoding="utf-8-sig"
+            ),
+        )
         return str(out_path)
 
     df = pd.read_csv(metadata_path)
@@ -281,7 +301,12 @@ def export_problem_list_csv(metadata_csv: str, out_csv: str = None) -> str:
             "submissions_count": counts.get(problem_id, 0),
         })
 
-    pd.DataFrame(rows, columns=PROBLEM_LIST_COLUMNS).to_csv(out_path, index=False, encoding="utf-8-sig")
+    atomic_replace(
+        out_path,
+        lambda path: pd.DataFrame(rows, columns=PROBLEM_LIST_COLUMNS).to_csv(
+            path, index=False, encoding="utf-8-sig"
+        ),
+    )
     return str(out_path)
 
 
@@ -291,7 +316,9 @@ def export_problem_list_csv(metadata_csv: str, out_csv: str = None) -> str:
 def download_submissions_from_df(df: pd.DataFrame,
                                  output_dir: str = DEFAULT_OUTPUT_DIR,
                                  only_ac: bool = True,
-                                 metadata_csv: str = None):
+                                 metadata_csv: str = None,
+                                 workers: int = DEFAULT_WORKERS,
+                                 delay: float = SLEEP):
     """
     Estrutura gerada:
         <output_dir>/
@@ -300,6 +327,11 @@ def download_submissions_from_df(df: pd.DataFrame,
                 <problem_id>/
                     <sub_id>_<veredito>.<ext>
     """
+    if workers < 1:
+        raise ValueError("workers deve ser maior que zero.")
+    if delay < 0:
+        raise ValueError("delay não pode ser negativo.")
+
     os.makedirs(output_dir, exist_ok=True)
     metadata_csv = metadata_csv or os.path.join(output_dir, DEFAULT_METADATA_FILENAME)
     os.makedirs(os.path.dirname(metadata_csv) or ".", exist_ok=True)
@@ -309,6 +341,8 @@ def download_submissions_from_df(df: pd.DataFrame,
     problemas_vistos = set()
     total = len(df)
 
+    pending = []
+    scheduled_ids = set(done_ids)
     for pos, (_, row) in enumerate(df.iterrows(), start=1):
         sub_id = int(row["id"])
         contest_id = str(row["contest_id"])
@@ -322,7 +356,7 @@ def download_submissions_from_df(df: pd.DataFrame,
             puladas += 1
             continue
 
-        if sub_id in done_ids:
+        if sub_id in scheduled_ids:
             print(f"{tag} já baixada, pulando.")
             puladas += 1
             continue
@@ -333,36 +367,53 @@ def download_submissions_from_df(df: pd.DataFrame,
         filename = f"{sub_id}_{sanitize(verdict)}.{ext}"
         filepath = os.path.join(problem_dir, filename)
 
-        print(f"{tag} [{verdict}] baixando...")
+        pending.append({
+            "pos": pos,
+            "tag": tag,
+            "sub_id": sub_id,
+            "contest_id": contest_id,
+            "problem_id": problem_id,
+            "language": language,
+            "verdict": verdict,
+            "filepath": filepath,
+        })
+        scheduled_ids.add(sub_id)
 
-        try:
-            data = get_submission_data(contest_id, sub_id)
-            source_code = data["code"].replace("\r\n", "\n").replace("\r", "\n")
+    def fetch(item):
+        print(f"{item['tag']} [{item['verdict']}] baixando...")
+        data = get_submission_data(item["contest_id"], item["sub_id"])
+        if delay:
+            time.sleep(delay)
+        return item, data
 
-            with open(filepath, "w", encoding="utf-8", newline="") as f:
-                f.write(source_code)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(fetch, item): item for item in pending}
+        for future in as_completed(futures):
+            item = futures[future]
+            try:
+                item, data = future.result()
+                source_code = data["code"].replace("\r\n", "\n").replace("\r", "\n")
+                with open(item["filepath"], "w", encoding="utf-8", newline="") as f:
+                    f.write(source_code)
 
-            append_csv_row(metadata_csv, {
-                "codigo_submissao": sub_id,
-                "campeonato": data["contest_name"],
-                "sigla_campeonato": contest_id,
-                "tempo_execucao_ms": data["exec_time_ms"],
-                "memoria_kb": data["memory_kb"],
-                "linguagem": language,
-                "pagina_problema": f"{BASE_URL}/contests/{contest_id}/tasks/{problem_id}",
-                "nome_problema": data["problem_name"] or problem_id,
-                "veredito": verdict,
-                "arquivo": os.path.relpath(filepath, output_dir),
-            })
-
-            print(f" -> Salvo em {filepath}")
-            baixadas += 1
-            problemas_vistos.add((contest_id, problem_id))
-            time.sleep(SLEEP)
-
-        except Exception as e:
-            falhas += 1
-            print(f" -> Erro ao baixar {sub_id}: {e}")
+                append_csv_row(metadata_csv, {
+                    "codigo_submissao": item["sub_id"],
+                    "campeonato": data["contest_name"],
+                    "sigla_campeonato": item["contest_id"],
+                    "tempo_execucao_ms": data["exec_time_ms"],
+                    "memoria_kb": data["memory_kb"],
+                    "linguagem": item["language"],
+                    "pagina_problema": f"{BASE_URL}/contests/{item['contest_id']}/tasks/{item['problem_id']}",
+                    "nome_problema": data["problem_name"] or item["problem_id"],
+                    "veredito": item["verdict"],
+                    "arquivo": os.path.relpath(item["filepath"], output_dir),
+                })
+                print(f" -> Salvo em {item['filepath']}")
+                baixadas += 1
+                problemas_vistos.add((item["contest_id"], item["problem_id"]))
+            except Exception as e:
+                falhas += 1
+                print(f" -> Erro ao baixar {item['sub_id']}: {e}")
 
     print("\n--- Resumo ---")
     print(f"Total analisadas : {total}")
@@ -381,6 +432,10 @@ def build_parser():
                         help="CSV de entrada com as submissões (colunas: id, contest_id, problem_id, language, result)")
     parser.add_argument("--out", default=DEFAULT_OUTPUT_DIR, help="Pasta de saída")
     parser.add_argument("--all", action="store_true", help="Baixar todas, não apenas AC")
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                        help=f"Downloads simultâneos (padrão: {DEFAULT_WORKERS}).")
+    parser.add_argument("--delay", type=float, default=SLEEP,
+                        help=f"Intervalo por worker após cada request, em segundos (padrão: {SLEEP}).")
     parser.add_argument("--contest", default=None,
                         help="Baixar só um campeonato (ID ou parte do nome, ex.: 'abc300' ou 'Beginner Contest 300')")
     parser.add_argument("--list-contests", action="store_true",
@@ -405,6 +460,8 @@ def main(argv=None):
         df_submissions,
         output_dir=args.out,
         only_ac=not args.all,
+        workers=args.workers,
+        delay=args.delay,
     )
     return args.out
 

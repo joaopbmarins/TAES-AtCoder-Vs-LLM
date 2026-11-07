@@ -38,6 +38,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import unquote
 
+from taes.core.files import atomic_replace
 from taes.core.paths import DEFAULT_QODANA_REPORT, QODANA_DIR
 
 LEVELS = ["error", "warning", "note", "none"]
@@ -63,7 +64,9 @@ def write_qodana_yaml(dest: Path, linter: str, rules: list[str]) -> None:
     lines = ['version: "1.0"', f"linter: {linter}", "profile:", "  name: empty",
              "failThreshold: 100000000", "include:"]
     lines += [f"  - name: {r}" for r in rules]
-    dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_replace(dest, lambda path: path.write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    ))
 
 
 def find_files(base: Path, exts: set[str], only_ac: bool = True) -> list[Path]:
@@ -101,7 +104,9 @@ def make_compile_commands(project: Path, files: list[Path], container_root: str,
     out_dir = project / "build"
     out_dir.mkdir(exist_ok=True)
     cc = out_dir / "compile_commands.json"
-    cc.write_text(json.dumps(entries, indent=1), encoding="utf-8")
+    atomic_replace(cc, lambda path: path.write_text(
+        json.dumps(entries, indent=1), encoding="utf-8"
+    ))
     return cc
 
 
@@ -109,9 +114,14 @@ def run_qodana(project: Path, results_dir: Path, linter: str):
     cmd = ["qodana", "scan", "--linter", linter, "--project-dir", str(project),
            "--results-dir", str(results_dir), "--save-report=false"]
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    (results_dir / "qodana.log").write_text(
-        f"CMD: {' '.join(cmd)}\nEXIT: {proc.returncode}\n--- STDOUT ---\n{proc.stdout}\n--- STDERR ---\n{proc.stderr}\n",
-        encoding="utf-8")
+    atomic_replace(
+        results_dir / "qodana.log",
+        lambda path: path.write_text(
+            f"CMD: {' '.join(cmd)}\nEXIT: {proc.returncode}\n"
+            f"--- STDOUT ---\n{proc.stdout}\n--- STDERR ---\n{proc.stderr}\n",
+            encoding="utf-8",
+        ),
+    )
     return proc
 
 
