@@ -1,11 +1,59 @@
-# Inspeções Python (IDs do Qodana/IntelliJ) — um por linha
-PyUnusedLocalInspection
+# Inspeções Python para código de contest (IDs do Qodana/IntelliJ) — um por linha
+# Usar os nomes com sufixo "Inspection"
+
+# Erro de sintaxe (vira Compilation/Runtime Error no juiz)
+Annotator
+
+# Erros que quebram a execução ou dão resposta errada
 PyUnresolvedReferencesInspection
-PyShadowingNamesInspection
-PyShadowingBuiltinsInspection
-PyBroadExceptionInspection
-PyMethodMayBeStaticInspection
-PyRedundantParenthesesInspection
-PyPep8Inspection
-PyPep8NamingInspection
+PyUnboundLocalVariableInspection
 PyArgumentListInspection
+PyTypeCheckerInspection
+PyRedeclarationInspection
+PyUnreachableCodeInspection
+PyStatementEffectInspection
+PyDefaultArgumentInspection
+PyNoneFunctionAssignmentInspection
+PyDictDuplicateKeysInspection
+PyStringFormatInspection
+PyAssignmentToLoopOrWithParameterInspection
+PyUnhashableInspection
+PyTupleItemAssignmentInspection
+PyCallingNonCallableInspection
+PyGlobalUndefinedInspection
+PyExceptClausesOrderInspection
+PyInconsistentIndentationInspection
+
+# Armadilhas de lógica
+PyChainedComparisonsInspection
+PyComparisonWithNoneInspection
+PyBroadExceptionInspection
+PyInconsistentReturnsInspection
+
+# Sinais secundários de qualidade
+PyUnusedLocalVariableInspection
+PyUnusedImportsInspection
+
+# Compatibilidade (depende da versão de Python configurada)
+PyCompatibilityInspection
+
+# Complexidade (o único "code smell" de verdade no Qodana Python)
+CyclomaticComplexityInspection
+
+# Código morto e sobras
+PyUnusedFunctionInspection
+PyUnusedParameterInspection
+
+# Simplificações (legibilidade e idioma Python)
+PySimplifyBooleanCheckInspection
+PyAugmentAssignmentInspection
+PyDictCreationInspection
+PyListCreationInspection
+PySetFunctionToLiteralInspection
+PyRedundantParenthesesInspection
+PyTrailingSemicolonInspection
+PyUnnecessaryBackslashInspection
+
+# Armadilhas reais
+PyInvalidEscapeSequenceInspection
+PyShadowingBuiltinsInspection
