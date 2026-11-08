@@ -54,8 +54,8 @@ def load_rules(path: Path) -> list[str]:
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.split("#", 1)[0].strip()
         if line:
-            # o Qodana/SARIF usa o shortName da inspeção, sem o sufixo "Inspection"
-            rules.append(line.removesuffix("Inspection"))
+            #rules.append(line.removesuffix("Inspection"))
+            rules.append(line)
     return rules
 
 
