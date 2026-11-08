@@ -8,7 +8,9 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .config import HEADERS
+from taes.core.models import Problem
+
+from ...core.config import HEADERS
 
 
 def make_session() -> requests.Session:
@@ -23,7 +25,7 @@ def make_session() -> requests.Session:
 _SESSION = make_session()
 
 
-def scrape_problem(problem_id: str) -> dict:
+def scrape_problem(problem_id: str) -> Problem:
     """Retorna {"id", "contest", "statement", "samples": [(entrada, saída_esperada), ...]}."""
     contest = problem_id.rsplit("_", 1)[0]
     url = f"https://atcoder.jp/contests/{contest}/tasks/{problem_id}?lang=en"

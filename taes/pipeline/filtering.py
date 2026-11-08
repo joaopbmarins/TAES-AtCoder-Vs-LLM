@@ -1,9 +1,12 @@
 import argparse
 import os
+import time
 from pathlib import Path
 
 import pandas as pd
 import requests
+
+from taes.core.files import atomic_replace
 
 SUBS_URL = "https://s3-ap-northeast-1.amazonaws.com/kenkoooo/submissions.csv.gz"
 SUBS_CANDIDATOS = ["submissions.csv", "submissions.csv.gz"]
@@ -21,22 +24,39 @@ def garantir_dataset(candidatos=SUBS_CANDIDATOS, url=SUBS_URL):
             return caminho
 
     destino = "submissions.csv.gz"
-    parcial = destino + ".part"          # evita deixar arquivo corrompido se o download cair
-    print(f"Dataset não encontrado. Baixando para {destino} ...")
+    parcial = destino + ".part"
+    parcial_path = Path(parcial)
+    offset = parcial_path.stat().st_size if parcial_path.exists() else 0
+    headers = {"Range": f"bytes={offset}-"} if offset else {}
+    if offset:
+        print(f"Download interrompido encontrado. Retomando em {offset / 1e6:.0f} MB ...")
+    else:
+        print(f"Dataset não encontrado. Baixando para {destino} ...")
 
-    with requests.get(url, stream=True, timeout=60) as r:
+    with requests.get(url, stream=True, timeout=60, headers=headers) as r:
         r.raise_for_status()
-        total = int(r.headers.get("Content-Length", 0))
-        baixado = 0
-        with open(parcial, "wb") as f:
+        resumed = offset > 0 and r.status_code == 206
+        if offset and not resumed:
+            print("O servidor não aceitou a retomada; reiniciando o download.")
+            offset = 0
+        total = offset + int(r.headers.get("Content-Length", 0))
+        baixado = offset
+        mode = "ab" if resumed else "wb"
+        with open(parcial, mode) as f:
             for pedaco in r.iter_content(chunk_size=1024 * 1024):
+                if not pedaco:
+                    continue
                 f.write(pedaco)
                 baixado += len(pedaco)
                 if total:
-                    print(f"\r  {baixado / 1e6:.0f}/{total / 1e6:.0f} MB "
-                          f"({baixado / total:.0%})", end="", flush=True)
+                    print(
+                        f"\r  {baixado / 1e6:.0f}/{total / 1e6:.0f} MB "
+                        f"({baixado / total:.0%})",
+                        end="",
+                        flush=True,
+                    )
     print()
-    os.replace(parcial, destino)         # só vira o arquivo final se terminou
+    os.replace(parcial, destino)
     print("Download concluído.")
     return destino
 
@@ -55,9 +75,11 @@ def para_epoch(valor, fim=False):
 
 def carregar_inicio_contests():
     """Baixa (sob demanda, não no import) o início de cada contest."""
+    print("Obtendo datas dos contests...", flush=True)
     resp = requests.get(CONTESTS, timeout=60)
     resp.raise_for_status()
     contests = pd.DataFrame(resp.json())
+    print(f"Datas de {len(contests):,} contests carregadas.", flush=True)
     return (contests[["id", "start_epoch_second"]]
             .rename(columns={"id": "contest_id",
                              "start_epoch_second": "contest_start_epoch"}))
@@ -136,13 +158,15 @@ def processar(
     if max_por_contest is not None and max_por_contest <= 0:
         raise ValueError("max_por_contest deve ser maior que zero.")
 
-    subs = dataset_path if dataset_path is not None and os.path.exists(dataset_path) else garantir_dataset()  # .csv ou .csv.gz; baixa se faltar
+    if dataset_path is not None:
+        if not os.path.exists(dataset_path):
+            raise FileNotFoundError(f"Dataset não encontrado: {dataset_path}")
+        subs = dataset_path
+    else:
+        subs = garantir_dataset()
 
-    # evita sobrar arquivo antigo de uma execução anterior
     saida_path = Path(saida)
     saida_path.parent.mkdir(parents=True, exist_ok=True)
-    if saida_path.exists():
-        saida_path.unlink()
 
     corte_epoch = pd.Timestamp(corte, tz=TZ).timestamp() if corte else None
     envio_de_epoch = para_epoch(envio_de) if envio_de else None
@@ -151,9 +175,27 @@ def processar(
     if envio_de_epoch and envio_ate_epoch and envio_de_epoch >= envio_ate_epoch:
         raise ValueError("envio_de deve ser anterior a envio_ate.")
 
+    tamanho_gib = Path(subs).stat().st_size / (1024 ** 3)
+    print(
+        f"Iniciando filtro de {subs} ({tamanho_gib:.2f} GiB), "
+        "em blocos de 1.000.000 linhas...",
+        flush=True,
+    )
     inicio = carregar_inicio_contests()
     blocos = []
+    inicio_leitura = time.monotonic()
+    linhas_lidas = 0
+    blocos_lidos = 0
     for bloco in pd.read_csv(subs, chunksize=1_000_000):   # pandas detecta o .gz pela extensão
+        blocos_lidos += 1
+        linhas_lidas += len(bloco)
+        if blocos_lidos == 1 or blocos_lidos % 5 == 0:
+            print(
+                f"Filtro: bloco {blocos_lidos} recebido | "
+                f"{linhas_lidas:,} linhas lidas | "
+                f"{time.monotonic() - inicio_leitura:.0f}s",
+                flush=True,
+            )
         # filtros baratos primeiro
         if envio_de_epoch is not None:
             bloco = bloco[bloco["epoch_second"] >= envio_de_epoch]
@@ -187,15 +229,24 @@ def processar(
         blocos.append(bloco)
 
     if not blocos:
-        print(f"Nenhuma submissão passou nos filtros ({saida} não foi criado).")
+        atomic_replace(saida_path, lambda path: pd.DataFrame().to_csv(path, index=False))
+        print(
+            f"Nenhuma submissão passou nos filtros ({saida} vazio). "
+            f"{linhas_lidas:,} linhas lidas.",
+            flush=True,
+        )
         return saida
 
     final = pd.concat(blocos, ignore_index=True)
     if max_por_problema is not None or max_por_contest is not None:
         final = _aplicar_caps(final, max_por_problema=max_por_problema, max_por_contest=max_por_contest, seed=seed)
 
-    final.to_csv(saida, index=False)
-    print(f"Gerado: {saida}")
+    atomic_replace(saida_path, lambda path: final.to_csv(path, index=False))
+    print(
+        f"Gerado: {saida} ({len(final):,} linhas de {linhas_lidas:,} lidas; "
+        f"{time.monotonic() - inicio_leitura:.0f}s)",
+        flush=True,
+    )
     return saida
 
 

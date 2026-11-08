@@ -4,5 +4,16 @@
 
 # artefatos gerados
 outputs/
+submissions.csv
+submissions.csv.gz
+submissions.csv.gz.part
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+qodana.yaml

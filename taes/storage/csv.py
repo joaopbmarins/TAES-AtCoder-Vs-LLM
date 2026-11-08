@@ -5,7 +5,8 @@ import csv
 import json
 from pathlib import Path
 
-from .config import RESULT_FIELDS
+from taes.core.config import RESULT_FIELDS
+from taes.core.files import atomic_replace
 
 
 def compact_text(value: object, limit: int = 1200) -> str:
@@ -43,18 +44,21 @@ def write_results(out_csv: str, rows: dict[str, dict]) -> None:
             if key not in seen:
                 keys.append(key)
                 seen.add(key)
-    with open(out_csv, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        for row in rows.values():
-            sanitized = {}
-            for key in keys:
-                value = row.get(key)
-                if key in {"reason", "feedback"}:
-                    sanitized[key] = compact_text(value)
-                else:
-                    sanitized[key] = value
-            w.writerow(sanitized)
+    def write(path: Path) -> None:
+        with path.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=keys)
+            w.writeheader()
+            for row in rows.values():
+                sanitized = {}
+                for key in keys:
+                    value = row.get(key)
+                    if key in {"reason", "feedback"}:
+                        sanitized[key] = compact_text(value)
+                    else:
+                        sanitized[key] = value
+                w.writerow(sanitized)
+
+    atomic_replace(out_csv, write)
 
 
 def write_error_rows(out_csv: str, rows: dict[str, dict]) -> None:
@@ -63,30 +67,47 @@ def write_error_rows(out_csv: str, rows: dict[str, dict]) -> None:
         if row.get("verdict") not in {None, "AC"} and (row.get("reason") or row.get("feedback"))
     }
     if not relevant:
-        Path(out_csv).parent.mkdir(parents=True, exist_ok=True)
-        Path(out_csv).write_text("problem_id,verdict,reason,feedback\n", encoding="utf-8")
+        atomic_replace(
+            out_csv,
+            lambda path: path.write_text("problem_id,verdict,reason,feedback\n", encoding="utf-8"),
+        )
         return
 
     keys = ["problem_id", "verdict", "reason", "feedback"]
-    with open(out_csv, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        for pid, row in relevant.items():
-            w.writerow({
-                "problem_id": pid,
-                "verdict": row.get("verdict", ""),
-                "reason": row.get("reason", ""),
-                "feedback": row.get("feedback", ""),
-            })
+    def write(path: Path) -> None:
+        with path.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=keys)
+            w.writeheader()
+            for pid, row in relevant.items():
+                w.writerow({
+                    "problem_id": pid,
+                    "verdict": row.get("verdict", ""),
+                    "reason": row.get("reason", ""),
+                    "feedback": row.get("feedback", ""),
+                })
+
+    atomic_replace(out_csv, write)
 
 
 def save_attempt(att_dir: Path, entry: dict) -> None:
     """Salva uma tentativa: attemptN.py (código) e attemptN.json (prompt, resposta bruta, resultado)."""
     att_dir.mkdir(parents=True, exist_ok=True)
     n = entry["attempt"]
-    (att_dir / f"attempt{n}.py").write_text(entry["code"], encoding="utf-8")
-    (att_dir / f"attempt{n}.json").write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_replace(
+        att_dir / f"attempt{n}.py",
+        lambda path: path.write_text(entry["code"], encoding="utf-8"),
+    )
+    atomic_replace(
+        att_dir / f"attempt{n}.json",
+        lambda path: path.write_text(
+            json.dumps(entry, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        ),
+    )
 
 
 def save_solution(out_dir: Path, problem_id: str, code: str) -> None:
-    (out_dir / f"{problem_id}.py").write_text(code, encoding="utf-8")
+    atomic_replace(
+        out_dir / f"{problem_id}.py",
+        lambda path: path.write_text(code, encoding="utf-8"),
+    )

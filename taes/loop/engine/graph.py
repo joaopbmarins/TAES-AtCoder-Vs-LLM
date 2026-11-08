@@ -1,11 +1,11 @@
 """Dispatcher dos grafos disponíveis do projeto."""
 from __future__ import annotations
 
-from .config import AVAILABLE_GRAPHS, GRAPH_NAME
+from ...core.config import AVAILABLE_GRAPHS, GRAPH_NAME
+from ..integrations.judge import Submitter
 from .graphs.default import build_default_graph
 from .graphs.dummy import build_dummy_graph
 from .graphs.state import S
-from .judge import Submitter
 
 
 def build_graph(llm, submit_fn: Submitter, graph_name: str | None = None):
