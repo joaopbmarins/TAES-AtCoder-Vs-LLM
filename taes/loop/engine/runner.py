@@ -17,6 +17,7 @@ from taes.storage.csv import (
 
 from ...core.config import RECURSION_LIMIT
 from ...core.paths import DEFAULT_LOOP_SOLUTIONS_DIR
+from ..integrations.llm import get_usage, reset_usage
 from ..integrations.scraper import scrape_problem
 from .graph import S, build_graph
 
@@ -43,6 +44,7 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
             continue
 
         saved = 0
+        reset_usage()
         try:
             log.info("[%d/%d] %s: iniciando scraping do problema", n, len(ids), pid)
             problem = scrape(pid)
@@ -70,6 +72,7 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
                 "memory_kb": res.get("memory_kb"),
                 "reason": compact_text(res.get("reason") or res.get("feedback") or res["verdict"]),
                 "feedback": compact_text(res.get("feedback")),
+                **get_usage(),
             }
             if res["verdict"] == "AC":
                 save_solution(out, pid, final["code"])
@@ -86,6 +89,7 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
                 "memory_kb": None,
                 "reason": compact_text(str(e)),
                 "feedback": compact_text(str(e)),
+                **get_usage(),
             }
 
         rows[pid] = row

@@ -13,7 +13,8 @@ AVAILABLE_GRAPHS = ("default", "multiagent", "dummy")
 
 # Colunas do CSV de resultados
 # Mantém a compatibilidade com o histórico e também registra motivo/feedback da submissão.
-RESULT_FIELDS = ["problem_id", "verdict", "attempts", "time_ms", "memory_kb", "reason", "feedback"]
+RESULT_FIELDS = ["problem_id", "verdict", "attempts", "time_ms", "memory_kb", "reason", "feedback",
+                 "llm_calls", "input_tokens", "output_tokens"]
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",

@@ -1,4 +1,11 @@
-"""Grafo multiagente: planejamento, código, testes, validação e submissão."""
+"""Grafo multiagente: planejamento, código, testes, validação e submissão.
+
+Agentes com LLM: Planner, Coder e Test Agent. Validator e Submission Manager são determinísticos.
+
+Política de testes: os exemplos OFICIAIS do enunciado bloqueiam a submissão; os testes gerados pelo
+Test Agent não têm gabarito (a saída esperada também vem do LLM), então só geram AVISO. Assim uma
+solução correta nunca deixa de ser submetida por causa de um teste gerado errado.
+"""
 from __future__ import annotations
 
 import json
@@ -15,12 +22,15 @@ from .state import S
 
 log = logging.getLogger(__name__)
 
+MAX_GENERATED_TESTS = 10
+MAX_TEST_CHARS = 20_000
+
 
 def _problem_text(statement: str) -> str:
     return f'The coding problem:\n\n"""\n{statement}\n"""\n'
 
 
-def planner_prompt(statement: str) -> str:
+def build_planner_prompt(statement: str) -> str:
     return (
         "You are the Planner Agent. Analyze the competitive programming problem below. "
         "Describe the algorithm, correctness argument, complexity, and important edge cases. "
@@ -28,34 +38,38 @@ def planner_prompt(statement: str) -> str:
     )
 
 
-def test_prompt(statement: str, plan: str = "") -> str:
+def build_test_prompt(statement: str, plan: str = "") -> str:
     return (
         "You are the Test Agent. Create normal and extreme tests for the problem below. "
-        "Return only a JSON array of objects with exactly the keys `input` and `output`; "
-        "both values must be strings. Include at least the examples when they are available.\n"
+        f"Return only a JSON array with at most {MAX_GENERATED_TESTS} objects having exactly the keys "
+        "`input` and `output`; both values must be strings. Keep every test small enough to write by hand "
+        "and only include tests whose expected output you can compute with certainty.\n"
         + _problem_text(statement)
         + f"\nPlanner strategy:\n\"\"\"\n{plan}\n\"\"\"\n"
     )
 
 
-def coder_prompt(statement: str, plan: str, feedback: str = "") -> str:
-    feedback_text = (
-        f"\nPrevious validation/submission feedback:\n\"\"\"\n{feedback[:MAX_FEEDBACK_CHARS]}\n\"\"\"\n"
-        if feedback
-        else ""
-    )
+def build_coder_prompt(statement: str, plan: str, feedback: str = "", previous_code: str = "") -> str:
+    repair = ""
+    if feedback or previous_code:
+        repair = (
+            "\nYour previous attempt failed. Fix it.\n"
+            f"Feedback:\n\"\"\"\n{feedback[:MAX_FEEDBACK_CHARS]}\n\"\"\"\n"
+        )
+        if previous_code:
+            repair += f"\nThe code with the error:\n\n{FENCE}python\n{previous_code}\n{FENCE}\n"
     return (
         "You are the Coder Agent. Implement the solution in Python 3 using the planner's strategy. "
         "Return only one Python code block. The program must read standard input and write standard output.\n"
         + _problem_text(statement)
         + f"Planner strategy:\n\"\"\"\n{plan}\n\"\"\"\n"
-        + feedback_text
-        + f"Use this code block format:\n{FENCE}python\n{FENCE}\n"
+        + repair
+        + f"\nUse this code block format:\n{FENCE}python\n{FENCE}\n"
     )
 
 
 def parse_tests(text: str, samples: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Lê testes JSON do Test Agent e sempre mantém os exemplos como base."""
+    """Lê testes JSON do Test Agent; itens inválidos são ignorados e os exemplos ficam sempre na frente."""
     candidates = [text]
     candidates.extend(code for _, code in FENCE_RE.findall(text or "") if code.strip())
     parsed = None
@@ -69,72 +83,107 @@ def parse_tests(text: str, samples: list[tuple[str, str]]) -> list[tuple[str, st
             break
     if parsed is None:
         raise ValueError("Test Agent não retornou um JSON válido de testes.")
-    tests = list(samples)
+    tests = [tuple(sample) for sample in samples]
+    generated = 0
     for item in parsed:
+        if generated >= MAX_GENERATED_TESTS:
+            break
         if not isinstance(item, dict) or not isinstance(item.get("input"), str) or not isinstance(item.get("output"), str):
-            raise ValueError("Test Agent retornou um teste sem strings 'input' e 'output'.")
+            continue
+        if len(item["input"]) > MAX_TEST_CHARS or len(item["output"]) > MAX_TEST_CHARS:
+            continue
         pair = (item["input"], item["output"])
         if pair not in tests:
             tests.append(pair)
+            generated += 1
     return tests
 
 
 def build_multiagent_graph(llm, submit_fn: Submitter):
     def planner(s: S) -> S:
-        text = invoke_with_retry(llm, planner_prompt(s["problem"]["statement"]))
+        try:
+            text = invoke_with_retry(llm, build_planner_prompt(s["problem"]["statement"]))
+        except Exception as exc:  # o Coder ainda consegue resolver sem plano
+            log.warning("[graph] Planner falhou (%s); seguindo sem plano", exc)
+            text = ""
         return {"plan": text}
 
     def test_agent(s: S) -> S:
-        text = invoke_with_retry(llm, test_prompt(s["problem"]["statement"], s.get("plan", "")))
+        samples = list(s["problem"]["samples"])
+        if not LOCAL_PRECHECK:
+            return {"tests": samples}
         try:
-            tests = parse_tests(text, s["problem"]["samples"])
-        except ValueError as exc:
+            text = invoke_with_retry(llm, build_test_prompt(s["problem"]["statement"], s.get("plan", "")))
+            tests = parse_tests(text, samples)
+        except Exception as exc:
             log.warning("[graph] Test Agent inválido: %s", exc)
-            tests = list(s["problem"]["samples"])
+            tests = samples
         return {"tests": tests}
 
     def coder(s: S) -> S:
         attempt = s.get("attempt", 0) + 1
-        feedback = s.get("result", {}).get("feedback", "") if s.get("result") else ""
-        prompt = coder_prompt(s["problem"]["statement"], s.get("plan", ""), feedback)
+        previous = s.get("result") or {}
+        feedback = previous.get("feedback", "")
+        prompt = build_coder_prompt(s["problem"]["statement"], s.get("plan", ""), feedback, s.get("code", ""))
         text = invoke_with_retry(llm, prompt)
         code = extract_code(text)
         return {"prompt": prompt, "raw": text, "code": code, "attempt": attempt}
 
-    def validator(s: S) -> S:
-        if not s["code"]:
-            result = {"verdict": "RE", "time_ms": None, "memory_kb": None, "feedback": "No code block found."}
-        elif LOCAL_PRECHECK:
-            result = check_samples(s["code"], s.get("tests", s["problem"]["samples"]))
-            if result is None:
-                result = {"verdict": "LOCAL_AC", "time_ms": None, "memory_kb": None, "feedback": "Local tests passed."}
-                log.info("[graph] Validator Agent: todos os testes locais passaram")
-        else:
-            result = {"verdict": "LOCAL_AC", "time_ms": None, "memory_kb": None, "feedback": "Local validation skipped."}
-        result["source"] = "local"
-        entry = {
+    def _entry(s: S, result: dict, **extra) -> dict:
+        return {
             "attempt": s["attempt"], "prompt": s["prompt"], "raw_response": s["raw"],
             "code": s["code"], "result": result,
+            "plan": s.get("plan", ""), "generated_tests": [list(t) for t in s.get("tests", [])[len(s["problem"]["samples"]):]],
+            **extra,
         }
-        return {"result": result, "log": s.get("log", []) + [entry]}
+
+    def validator(s: S) -> S:
+        samples = list(s["problem"]["samples"])
+        warning = ""
+        if not s["code"]:
+            failure = {"verdict": "RE", "time_ms": None, "memory_kb": None, "feedback": "No code block found."}
+        elif not LOCAL_PRECHECK:
+            failure = None
+        else:
+            failure = check_samples(s["code"], samples)  # exemplos oficiais: bloqueiam
+            if failure is None:
+                extras = list(s.get("tests", samples))[len(samples):]
+                extra_failure = check_samples(s["code"], extras) if extras else None
+                if extra_failure is not None:
+                    warning = ("Generated test failed (the expected output of generated tests may be wrong): "
+                               + extra_failure["feedback"])
+                    log.warning("[graph] teste gerado falhou, mas exemplos oficiais passaram; submetendo mesmo assim")
+
+        if failure is not None:
+            failure["source"] = "local"
+            return {"result": failure, "log": s.get("log", []) + [_entry(s, failure)]}
+
+        passed = {"verdict": "LOCAL_AC", "time_ms": None, "memory_kb": None, "source": "local",
+                  "feedback": warning or "Local tests passed."}
+        log.info("[graph] Validator: exemplos oficiais passaram (aviso de teste gerado: %s)", bool(warning))
+        return {"result": passed, "pending_warning": warning}
 
     def submission_manager(s: S) -> S:
-        submissions = s.get("submissions", 0) + 1
         result = submit_fn(s["problem"], s["code"])
         result["source"] = "atcoder"
-        entry = dict(s["log"][-1])
-        entry["result"] = result
-        return {"result": result, "submissions": submissions, "log": s["log"][:-1] + [entry]}
+        warning = s.get("pending_warning", "")
+        extra = {"local_warning": warning} if warning else {}
+        if warning and result.get("verdict") != "AC":
+            result["feedback"] = f"{result.get('feedback', '')}\n{warning}".strip()
+        return {
+            "result": result,
+            "submissions": s.get("submissions", 0) + 1,
+            "log": s.get("log", []) + [_entry(s, result, **extra)],
+        }
 
     def after_validation(s: S) -> str:
-        return "submit" if s["result"]["verdict"] == "LOCAL_AC" else (
-            "end" if s["attempt"] >= MAX_ATTEMPTS else "coder"
-        )
+        if s["result"]["verdict"] == "LOCAL_AC":
+            return "submit"
+        return "end" if s["attempt"] >= MAX_ATTEMPTS else "coder"
 
     def after_submission(s: S) -> str:
-        if s["result"]["verdict"] == "AC" or s["submissions"] >= MAX_ATTEMPTS:
-            return "end"
-        return "coder" if s["attempt"] < MAX_ATTEMPTS else "end"
+        # cada submissão corresponde a uma tentativa do Coder, então `attempt` já limita as submissões
+        return "end" if s["result"]["verdict"] == "AC" or s["attempt"] >= MAX_ATTEMPTS else "coder"
 
     graph = StateGraph(S)
     graph.add_node("planner", planner)
@@ -145,6 +194,8 @@ def build_multiagent_graph(llm, submit_fn: Submitter):
     graph.add_edge(START, "planner")
     graph.add_edge("planner", "test_agent")
     graph.add_edge("planner", "coder")
+    # Duas arestas separadas (não um join): na 1ª passada os dois ramos rodam no mesmo superstep e o
+    # Validator roda uma vez; nas tentativas seguintes só o Coder roda, e um join esperaria o Test Agent.
     graph.add_edge("test_agent", "validator")
     graph.add_edge("coder", "validator")
     graph.add_conditional_edges("validator", after_validation, {"submit": "submission_manager", "coder": "coder", "end": END})

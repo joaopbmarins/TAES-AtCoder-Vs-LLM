@@ -7,6 +7,25 @@ import time
 
 log = logging.getLogger(__name__)
 
+_USAGE = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
+
+
+def reset_usage() -> None:
+    for key in _USAGE:
+        _USAGE[key] = 0
+
+
+def get_usage() -> dict[str, int]:
+    """Chamadas e tokens acumulados desde o último reset_usage() (0 se o provedor não informar)."""
+    return dict(_USAGE)
+
+
+def _record_usage(response) -> None:
+    _USAGE["llm_calls"] += 1
+    meta = getattr(response, "usage_metadata", None) or {}
+    _USAGE["input_tokens"] += int(meta.get("input_tokens", 0) or 0)
+    _USAGE["output_tokens"] += int(meta.get("output_tokens", 0) or 0)
+
 
 def _require_env(var_name: str, provider: str) -> str:
     value = os.getenv(var_name)
@@ -74,6 +93,7 @@ def invoke_with_retry(llm, prompt: str, retries: int = 3) -> str:
     for k in range(retries):
         try:
             response = llm.invoke(prompt)
+            _record_usage(response)
             text = message_text(response.content)
             log.info("[LLM] resposta recebida do modelo=%s (tentativa=%d/%d, bytes=%d)", model_name, k + 1, retries, len(text))
             return text

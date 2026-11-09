@@ -17,3 +17,4 @@ class S(TypedDict, total=False):
     plan: str
     tests: list[Sample]
     submissions: int
+    pending_warning: str

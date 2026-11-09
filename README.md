@@ -65,11 +65,15 @@ Para executar tudo em sequência:
 taes-pipeline all --raw-csv submissions.csv
 ```
 
+No `multiagent`, só os exemplos oficiais do enunciado bloqueiam a submissão; os testes gerados pelo
+Test Agent não têm gabarito e só geram aviso (vão para o feedback se o AtCoder rejeitar). O CSV de
+resultados traz `llm_calls`, `input_tokens` e `output_tokens` por problema, para comparar custo entre grafos.
+
 ## Arquitetura do loop
 
 ```mermaid
 flowchart TD
-    A["Questão do LeetCode<br/>Enunciado, exemplos e restrições"]
+    A["Problema do AtCoder<br/>Enunciado, exemplos e restrições"]
 
     subgraph AG["Sistema Multiagente"]
         B["Planner Agent<br/>Analisa o problema e define<br/>a estratégia algorítmica"]
