@@ -20,6 +20,11 @@ taes/
 tests/           # testes automatizados
 ```
 
+O loop oferece dois fluxos: `default` é o baseline de geração e reparo;
+`multiagent` executa o fluxo Planner/Coder/Test/Validator antes da submissão.
+Selecione o fluxo com `taes-loop --graph default` ou
+`taes-loop --graph multiagent`.
+
 Existe uma única implementação por funcionalidade. Os arquivos antigos na
 raiz foram removidos para evitar wrappers e imports duplicados.
 
@@ -58,6 +63,50 @@ Para executar tudo em sequência:
 
 ```bash
 taes-pipeline all --raw-csv submissions.csv
+```
+
+## Arquitetura do loop
+
+```mermaid
+flowchart TD
+    A["Questão do LeetCode<br/>Enunciado, exemplos e restrições"]
+
+    subgraph AG["Sistema Multiagente"]
+        B["Planner Agent<br/>Analisa o problema e define<br/>a estratégia algorítmica"]
+        C["Coder Agent<br/>Gera o código"]
+        D["Test Agent<br/>Gera casos de teste<br/>normais e extremos"]
+        E["Validator Agent<br/>Executa os testes locais<br/>e analisa os erros"]
+        F{"Todos os testes<br/>passaram?"}
+        G["Corrige o código<br/>com base nas falhas"]
+
+        B --> C
+        B --> D
+        C --> E
+        D --> E
+        E --> F
+        F -- "Não" --> G
+        G --> C
+    end
+
+    H["Submission Manager<br/>Controla as tentativas"]
+    I["Submete ao AtCoder"]
+    J["Analisa o feedback<br/>Accepted, Wrong Answer,<br/>TLE, Runtime Error etc."]
+    K{"Solução aceita?"}
+    L{"Tentativas de submissão<br/>< 3?"}
+    M["Atualiza o contexto<br/>com o feedback recebido"]
+    N(["Fim: solução aceita"])
+    O(["Fim: limite de tentativas atingido"])
+
+    A --> B
+    F -- "Sim" --> H
+    H --> I
+    I --> J
+    J --> K
+    K -- "Sim" --> N
+    K -- "Não" --> L
+    L -- "Sim" --> M
+    M --> C
+    L -- "Não" --> O
 ```
 
 Todos os caminhos padrão ficam centralizados em

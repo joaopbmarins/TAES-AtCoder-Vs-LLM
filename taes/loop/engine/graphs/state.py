@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from taes.core.models import JudgeResult, Problem
+from taes.core.models import JudgeResult, Problem, Sample
 
 
 class S(TypedDict, total=False):
@@ -14,3 +14,6 @@ class S(TypedDict, total=False):
     raw: str
     attempt: int
     log: list[dict]
+    plan: str
+    tests: list[Sample]
+    submissions: int

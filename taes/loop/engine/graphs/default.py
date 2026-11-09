@@ -1,9 +1,7 @@
 """Grafo padrão do projeto: build_prompt -> generate -> evaluate -> (reparo | fim)."""
 from __future__ import annotations
 
-import ast
 import logging
-import re
 
 from langgraph.graph import END, START, StateGraph
 
@@ -11,6 +9,7 @@ from ....core.config import FENCE, LOCAL_PRECHECK, MAX_ATTEMPTS, MAX_FEEDBACK_CH
 from ...integrations.judge import Submitter
 from ...integrations.llm import invoke_with_retry
 from ...validation.local_check import check_samples
+from .common import extract_code
 from .state import S
 
 log = logging.getLogger(__name__)
@@ -34,38 +33,6 @@ def repair_prompt(statement: str, error: str, code: str) -> str:
         f'Error Message:\n\n"""\n{error[:MAX_FEEDBACK_CHARS]}\n"""\n\n'
         f"The code with the error:\n\n{FENCE}python\n{code}\n{FENCE}\n"
     )
-
-
-_FENCE_RE = re.compile(r"```[ \t]*([\w+#-]*)[ \t]*\r?\n(.*?)\r?\n?```", re.DOTALL)
-_PY_TAGS = {"python", "python3", "py"}
-
-
-def _is_valid_python(text: str) -> bool:
-    try:
-        ast.parse(text)
-    except (SyntaxError, ValueError):
-        return False
-    return bool(text.strip())
-
-
-def extract_code(text: str) -> str:
-    """Último bloco ```python da resposta; sem tag, só aceita blocos que parseiam como Python.
-
-    Respostas truncadas (fence de abertura sem fechamento) também são tratadas.
-    """
-    text = text or ""
-    blocks = _FENCE_RE.findall(text)
-    tagged = [code for tag, code in blocks if tag.lower() in _PY_TAGS and code.strip()]
-    if tagged:
-        return tagged[-1].strip() + "\n"
-    untagged = [code for tag, code in blocks if not tag and _is_valid_python(code)]
-    if untagged:
-        return untagged[-1].strip() + "\n"
-
-    m = re.search(r"```[ \t]*(?:python3?|py)?[ \t]*\r?\n(.*)$", text, re.DOTALL | re.IGNORECASE)  # truncada
-    candidate = m.group(1) if m else text
-    candidate = re.sub(r"\r?\n```\s*$", "", candidate).strip()
-    return candidate + "\n" if _is_valid_python(candidate) else ""
 
 
 def build_default_graph(llm, submit_fn: Submitter):

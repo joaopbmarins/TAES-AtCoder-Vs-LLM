@@ -5,6 +5,7 @@ from ...core.config import AVAILABLE_GRAPHS, GRAPH_NAME
 from ..integrations.judge import Submitter
 from .graphs.default import build_default_graph
 from .graphs.dummy import build_dummy_graph
+from .graphs.multiagent import build_multiagent_graph
 from .graphs.state import S
 
 
@@ -13,6 +14,7 @@ def build_graph(llm, submit_fn: Submitter, graph_name: str | None = None):
     name = (graph_name or GRAPH_NAME).lower()
     builders = {
         "default": build_default_graph,
+        "multiagent": build_multiagent_graph,
         "dummy": build_dummy_graph,
     }
     if name not in builders:
@@ -24,6 +26,7 @@ def build_graph(llm, submit_fn: Submitter, graph_name: str | None = None):
 __all__ = [
     "S",
     "build_default_graph",
+    "build_multiagent_graph",
     "build_dummy_graph",
     "build_graph",
     "GRAPH_NAME",
