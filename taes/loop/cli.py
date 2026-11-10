@@ -40,7 +40,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out-dir", default=str(DEFAULT_LOOP_SOLUTIONS_DIR))
     ap.add_argument("--provider", choices=["openai", "google", "nvidia"], default="google")
     ap.add_argument("--model", default="gemini-3.8-flash")
-    ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument("--planner-model", help="Modelo exclusivo do Planner no grafo multiagent; padrão: --model.")
+    ap.add_argument("--coder-model", help="Modelo exclusivo do Coder no grafo multiagent; padrão: --model.")
+    ap.add_argument("--test-model", help="Modelo exclusivo do Test Agent no grafo multiagent; padrão: --model.")
+    ap.add_argument("--planner-reasoning", choices=["low", "medium", "high"], default="high")
+    ap.add_argument("--coder-reasoning", choices=["low", "medium", "high"], default="medium")
+    ap.add_argument("--test-reasoning", choices=["low", "medium", "high"], default="medium")
     ap.add_argument("--max-tokens", type=int, default=4096)
     ap.add_argument("--atcoder-session-cookie", help="Cookie/jar de sessão já autenticada do AtCoder.")
     ap.add_argument("--graph", default=None, help="grafo a usar (padrão: GRAPH_NAME de config.py)")
@@ -57,11 +62,30 @@ def main(argv: list[str] | None = None) -> None:
 
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
-    llm = build_llm(a.provider, a.model, a.temperature, a.max_tokens)
+    llm = build_llm(a.provider, a.model, a.max_tokens)
+    node_llms = None
+    if (a.graph or "").lower() == "multiagent":
+        node_llms = {
+            "planner": build_llm(
+                a.provider, a.planner_model or a.model, a.max_tokens, a.planner_reasoning
+            ),
+            "coder": build_llm(
+                a.provider, a.coder_model or a.model, a.max_tokens, a.coder_reasoning
+            ),
+            "test": build_llm(
+                a.provider, a.test_model or a.model, a.max_tokens, a.test_reasoning
+            ),
+        }
     def submit_fn(problem, code):
-        return submit_atcoder(problem, code, session_cookie=a.atcoder_session_cookie)
+        problem_id = problem.get("id") or problem.get("problem_id") or "solution"
+        return submit_atcoder(
+            problem,
+            code,
+            session_cookie=a.atcoder_session_cookie,
+            code_output_path=out_dir / f"{problem_id}.py",
+        )
     rows = run(a.csv, str(out_csv), llm, submit_fn=submit_fn, out_dir=str(out_dir), resume=not a.no_resume,
-               graph_name=a.graph, err_csv=str(out_errors))
+               graph_name=a.graph, err_csv=str(out_errors), node_llms=node_llms)
     ac = sum(r["verdict"] == "AC" for r in rows)
     log.info("Concluído: %d/%d AC", ac, len(rows))
 

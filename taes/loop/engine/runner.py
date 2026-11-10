@@ -1,6 +1,7 @@
 """Laço principal: para cada problema do CSV, scraping + grafo + gravação dos resultados."""
 from __future__ import annotations
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -24,13 +25,26 @@ from .graph import S, build_graph
 log = logging.getLogger(__name__)
 
 
+def _has_recorded_ac(out: Path, problem_id: str) -> bool:
+    attempts_dir = out / "tentativas" / problem_id
+    for result_path in attempts_dir.glob("attempt*.json"):
+        try:
+            data = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (data.get("result") or {}).get("verdict") == "AC":
+            return True
+    return False
+
+
 def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
         out_dir: str = str(DEFAULT_LOOP_SOLUTIONS_DIR), resume: bool = True,
-        delay: float = 1.5, graph_name: str | None = None, err_csv: str | None = None) -> list[dict]:
+        delay: float = 1.5, graph_name: str | None = None, err_csv: str | None = None,
+        node_llms=None) -> list[dict]:
     if submit_fn is None:
         raise ValueError("submit_fn é obrigatório para execução real do loop.")
 
-    graph = build_graph(llm, submit_fn, graph_name=graph_name)
+    graph = build_graph(llm, submit_fn, graph_name=graph_name, node_llms=node_llms)
     ids = read_ids(csv_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -39,7 +53,7 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
 
     rows = load_previous(out_csv) if resume else {}
     for n, pid in enumerate(ids, 1):
-        if rows.get(pid, {}).get("verdict") == "AC":
+        if rows.get(pid, {}).get("verdict") == "AC" or _has_recorded_ac(out, pid):
             log.info("[%d/%d] %s já resolvido, pulando", n, len(ids), pid)
             continue
 
@@ -67,7 +81,8 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
             row = {
                 "problem_id": pid,
                 "verdict": res["verdict"],
-                "attempts": final["attempt"],
+                "attempts": final.get("submission_attempts", 0),
+                "validation_attempts": final.get("validation_attempts", 0),
                 "time_ms": res.get("time_ms"),
                 "memory_kb": res.get("memory_kb"),
                 "reason": compact_text(res.get("reason") or res.get("feedback") or res["verdict"]),
@@ -85,6 +100,7 @@ def run(csv_path: str, out_csv: str, llm, scrape=scrape_problem, submit_fn=None,
                 "problem_id": pid,
                 "verdict": f"ERROR: {e}",
                 "attempts": saved,
+                "validation_attempts": 0,
                 "time_ms": None,
                 "memory_kb": None,
                 "reason": compact_text(str(e)),

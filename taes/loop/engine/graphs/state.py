@@ -13,6 +13,8 @@ class S(TypedDict, total=False):
     code: str
     raw: str
     attempt: int
+    validation_attempts: int
+    submission_attempts: int
     log: list[dict]
     plan: str
     tests: list[Sample]

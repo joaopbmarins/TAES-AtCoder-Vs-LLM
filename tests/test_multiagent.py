@@ -48,6 +48,21 @@ class FakeLLM:
         return r
 
 
+class TaggedLLM(FakeLLM):
+    def __init__(self, tag, coder_codes=None, tests="[]"):
+        super().__init__(coder_codes or ["print(int(input()) * 2)"], tests)
+        self.tag = tag
+        self.prompts = []
+
+    def invoke(self, prompt):
+        self.prompts.append(prompt)
+        response = super().invoke(prompt)
+        response.content = f"{self.tag}:{response.content}"
+        if "Test Agent" in prompt:
+            response.content = self.tests
+        return response
+
+
 def _run(llm, submit):
     graph = build_multiagent_graph(llm, submit)
     problem = {"id": "x_a", "contest": "x", "title": "", "statement": "s", "samples": SAMPLES}
@@ -77,4 +92,66 @@ def test_official_sample_failure_blocks_submission_and_retries():
 
     final = _run(FakeLLM(["print(0)", "print(int(input()) * 2)"]), submit)
     assert len(submitted) == 1 and final["attempt"] == 2
+    assert final["submission_attempts"] == 1
+    assert final["validation_attempts"] == 0
     assert [e["result"]["source"] for e in final["log"]] == ["local", "atcoder"]
+
+
+def test_submission_limit_counts_atcoder_submissions_not_local_generations():
+    submitted = []
+
+    def submit(problem, code):
+        submitted.append(code)
+        return {"verdict": "WA", "time_ms": 1, "memory_kb": 1, "feedback": "wrong"}
+
+    final = _run(FakeLLM(["print(int(input()) * 2)"] * 3), submit)
+    assert len(submitted) == 3
+    assert final["submission_attempts"] == 3
+    assert final["validation_attempts"] == 0
+
+
+def test_multiagent_routes_each_llm_node_independently():
+    planner = TaggedLLM("planner")
+    coder = TaggedLLM("coder")
+    test_agent = TaggedLLM("test", tests="[]")
+    submitted = []
+
+    def submit(problem, code):
+        submitted.append(code)
+        return {"verdict": "AC", "time_ms": 1, "memory_kb": 1, "feedback": ""}
+
+    problem = {"id": "x_a", "contest": "x", "title": "", "statement": "s", "samples": SAMPLES}
+    graph = build_multiagent_graph(
+        TaggedLLM("unused"),
+        submit,
+        node_llms={"planner": planner, "coder": coder, "test": test_agent},
+    )
+    graph.invoke({"problem": problem}, config={"recursion_limit": 100})
+
+    assert planner.prompts and "Planner Agent" in planner.prompts[0]
+    assert coder.prompts and "Coder Agent" in coder.prompts[0]
+    assert test_agent.prompts and "Test Agent" in test_agent.prompts[0]
+    assert [code.strip() for code in submitted] == ["print(int(input()) * 2)"]
+
+
+def test_test_agent_retries_invalid_generation_without_candidate_context():
+    test_agent = TaggedLLM("test", tests="not json")
+    coder = TaggedLLM("coder")
+    planner = TaggedLLM("planner")
+    submitted = []
+
+    def submit(problem, code):
+        submitted.append(code)
+        return {"verdict": "AC", "time_ms": 1, "memory_kb": 1, "feedback": ""}
+
+    problem = {"id": "x_a", "contest": "x", "title": "", "statement": "s", "samples": SAMPLES}
+    graph = build_multiagent_graph(
+        TaggedLLM("unused"),
+        submit,
+        node_llms={"planner": planner, "coder": coder, "test": test_agent},
+    )
+    graph.invoke({"problem": problem}, config={"recursion_limit": 100})
+
+    assert len(test_agent.prompts) == 3
+    assert all("print" not in prompt for prompt in test_agent.prompts)
+    assert submitted

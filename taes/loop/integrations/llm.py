@@ -37,36 +37,54 @@ def _require_env(var_name: str, provider: str) -> str:
     )
 
 
-def _build_openai_compatible_llm(provider: str, model: str, temperature: float, max_tokens: int, *,
-                                api_key_env: str, base_url: str | None = None):
+def _build_openai_compatible_llm(
+    provider: str,
+    model: str,
+    max_tokens: int,
+    *,
+    reasoning_effort: str | None = None,
+    api_key_env: str,
+    base_url: str | None = None,
+):
     api_key = _require_env(api_key_env, provider)
     from langchain_openai import ChatOpenAI
     kwargs = {
         "model": model,
-        "temperature": temperature,
         "max_tokens": max_tokens,
         "api_key": api_key,
     }
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
     if base_url:
         kwargs["base_url"] = base_url
     return ChatOpenAI(**kwargs)
 
 
-def build_llm(provider: str, model: str, temperature: float, max_tokens: int):
+def build_llm(
+    provider: str,
+    model: str,
+    max_tokens: int,
+    reasoning_effort: str | None = None,
+):
     provider = (provider or "google").lower().replace("-", "_")
     if provider in {"openai"}:
-        return _build_openai_compatible_llm(provider, model, temperature, max_tokens, api_key_env="OPENAI_API_KEY")
+        return _build_openai_compatible_llm(
+            provider,
+            model,
+            max_tokens,
+            reasoning_effort=reasoning_effort,
+            api_key_env="OPENAI_API_KEY",
+        )
     if provider in {"google", "gemini"}:
         _require_env("GOOGLE_API_KEY", provider)
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model=model, temperature=temperature, max_output_tokens=max_tokens)
+        return ChatGoogleGenerativeAI(model=model, max_output_tokens=max_tokens)
     if provider in {"nvidia", "nvidia_ai", "nvidia_ai_endpoints"}:
         api_key = _require_env("NVIDIA_API_KEY", provider)
         from langchain_nvidia_ai_endpoints import ChatNVIDIA
         return ChatNVIDIA(
             model=model,
             api_key=api_key,
-            temperature=temperature,
             max_tokens=max_tokens,
         )
     raise ValueError(f"provider desconhecido: {provider}")

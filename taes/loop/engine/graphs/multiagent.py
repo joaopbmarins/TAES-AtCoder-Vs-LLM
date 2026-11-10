@@ -13,7 +13,7 @@ import logging
 
 from langgraph.graph import END, START, StateGraph
 
-from ....core.config import FENCE, LOCAL_PRECHECK, MAX_ATTEMPTS, MAX_FEEDBACK_CHARS
+from ....core.config import FENCE, LOCAL_PRECHECK, MAX_ATTEMPTS, MAX_FEEDBACK_CHARS, MAX_VALIDATION_ATTEMPTS
 from ...integrations.judge import Submitter
 from ...integrations.llm import invoke_with_retry
 from ...validation.local_check import check_samples
@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 
 MAX_GENERATED_TESTS = 10
 MAX_TEST_CHARS = 20_000
+TEST_GENERATION_RETRIES = 2
 
 
 def _problem_text(statement: str) -> str:
@@ -99,10 +100,15 @@ def parse_tests(text: str, samples: list[tuple[str, str]]) -> list[tuple[str, st
     return tests
 
 
-def build_multiagent_graph(llm, submit_fn: Submitter):
+def build_multiagent_graph(llm, submit_fn: Submitter, node_llms=None):
+    node_llms = node_llms or {}
+    planner_llm = node_llms.get("planner", llm)
+    coder_llm = node_llms.get("coder", llm)
+    test_llm = node_llms.get("test", llm)
+
     def planner(s: S) -> S:
         try:
-            text = invoke_with_retry(llm, build_planner_prompt(s["problem"]["statement"]))
+            text = invoke_with_retry(planner_llm, build_planner_prompt(s["problem"]["statement"]))
         except Exception as exc:  # o Coder ainda consegue resolver sem plano
             log.warning("[graph] Planner falhou (%s); seguindo sem plano", exc)
             text = ""
@@ -112,12 +118,20 @@ def build_multiagent_graph(llm, submit_fn: Submitter):
         samples = list(s["problem"]["samples"])
         if not LOCAL_PRECHECK:
             return {"tests": samples}
-        try:
-            text = invoke_with_retry(llm, build_test_prompt(s["problem"]["statement"], s.get("plan", "")))
-            tests = parse_tests(text, samples)
-        except Exception as exc:
-            log.warning("[graph] Test Agent inválido: %s", exc)
-            tests = samples
+        prompt = build_test_prompt(s["problem"]["statement"], s.get("plan", ""))
+        tests = samples
+        for retry in range(TEST_GENERATION_RETRIES + 1):
+            try:
+                # Retries intentionally reuse only the problem and plan. Candidate code and
+                # prior test output are never supplied, avoiding confirmation bias.
+                text = invoke_with_retry(test_llm, prompt)
+                tests = parse_tests(text, samples)
+                break
+            except Exception as exc:
+                log.warning("[graph] Test Agent inválido (tentativa %d/%d): %s",
+                            retry + 1, TEST_GENERATION_RETRIES + 1, exc)
+        else:
+            log.warning("[graph] Test Agent esgotou as tentativas; usando apenas exemplos oficiais")
         return {"tests": tests}
 
     def coder(s: S) -> S:
@@ -125,7 +139,7 @@ def build_multiagent_graph(llm, submit_fn: Submitter):
         previous = s.get("result") or {}
         feedback = previous.get("feedback", "")
         prompt = build_coder_prompt(s["problem"]["statement"], s.get("plan", ""), feedback, s.get("code", ""))
-        text = invoke_with_retry(llm, prompt)
+        text = invoke_with_retry(coder_llm, prompt)
         code = extract_code(text)
         return {"prompt": prompt, "raw": text, "code": code, "attempt": attempt}
 
@@ -138,6 +152,7 @@ def build_multiagent_graph(llm, submit_fn: Submitter):
         }
 
     def validator(s: S) -> S:
+        validation_attempts = s.get("validation_attempts", 0) + 1
         samples = list(s["problem"]["samples"])
         warning = ""
         if not s["code"]:
@@ -156,7 +171,11 @@ def build_multiagent_graph(llm, submit_fn: Submitter):
 
         if failure is not None:
             failure["source"] = "local"
-            return {"result": failure, "log": s.get("log", []) + [_entry(s, failure)]}
+            return {
+                "result": failure,
+                "validation_attempts": validation_attempts,
+                "log": s.get("log", []) + [_entry(s, failure)],
+            }
 
         passed = {"verdict": "LOCAL_AC", "time_ms": None, "memory_kb": None, "source": "local",
                   "feedback": warning or "Local tests passed."}
@@ -166,24 +185,26 @@ def build_multiagent_graph(llm, submit_fn: Submitter):
     def submission_manager(s: S) -> S:
         result = submit_fn(s["problem"], s["code"])
         result["source"] = "atcoder"
+        submission_attempts = s.get("submission_attempts", 0) + 1
         warning = s.get("pending_warning", "")
         extra = {"local_warning": warning} if warning else {}
         if warning and result.get("verdict") != "AC":
             result["feedback"] = f"{result.get('feedback', '')}\n{warning}".strip()
         return {
             "result": result,
-            "submissions": s.get("submissions", 0) + 1,
+            "submissions": submission_attempts,
+            "submission_attempts": submission_attempts,
+            "validation_attempts": 0,
             "log": s.get("log", []) + [_entry(s, result, **extra)],
         }
 
     def after_validation(s: S) -> str:
         if s["result"]["verdict"] == "LOCAL_AC":
             return "submit"
-        return "end" if s["attempt"] >= MAX_ATTEMPTS else "coder"
+        return "end" if s.get("validation_attempts", 0) >= MAX_VALIDATION_ATTEMPTS else "coder"
 
     def after_submission(s: S) -> str:
-        # cada submissão corresponde a uma tentativa do Coder, então `attempt` já limita as submissões
-        return "end" if s["result"]["verdict"] == "AC" or s["attempt"] >= MAX_ATTEMPTS else "coder"
+        return "end" if s["result"]["verdict"] == "AC" or s.get("submission_attempts", 0) >= MAX_ATTEMPTS else "coder"
 
     graph = StateGraph(S)
     graph.add_node("planner", planner)

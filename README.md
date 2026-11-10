@@ -25,6 +25,29 @@ O loop oferece dois fluxos: `default` é o baseline de geração e reparo;
 Selecione o fluxo com `taes-loop --graph default` ou
 `taes-loop --graph multiagent`.
 
+No grafo `multiagent`, selecione um modelo por agente com `--planner-model`,
+`--coder-model` e `--test-model`. O provider é definido por `--provider`; se
+um modelo não for informado, ele herda `--model`. Exemplo:
+
+```bash
+taes-loop --graph multiagent --provider google \
+  --model gemini-3.8-flash \
+  --planner-model gemini-3.8-pro \
+  --coder-model gemini-3.8-flash \
+  --test-model gemini-3.8-flash
+```
+
+O Test Agent pode fazer novas tentativas quando sua resposta não for JSON
+válido ou contiver itens inválidos. Cada tentativa recebe somente o enunciado
+e o plano, nunca o código candidato nem a saída de uma tentativa anterior,
+para evitar viés de confirmação. Testes gerados continuam sendo avisos; apenas
+os exemplos oficiais bloqueiam a submissão.
+
+No `multiagent`, o Planner usa raciocínio `high`, enquanto Coder e Test Agent
+usam raciocínio `medium` por padrão. Esses níveis podem ser ajustados com
+`--planner-reasoning`, `--coder-reasoning` e `--test-reasoning`. O parâmetro de
+raciocínio é enviado ao provider OpenAI.
+
 Existe uma única implementação por funcionalidade. Os arquivos antigos na
 raiz foram removidos para evitar wrappers e imports duplicados.
 
@@ -68,6 +91,11 @@ taes-pipeline all --raw-csv submissions.csv
 No `multiagent`, só os exemplos oficiais do enunciado bloqueiam a submissão; os testes gerados pelo
 Test Agent não têm gabarito e só geram aviso (vão para o feedback se o AtCoder rejeitar). O CSV de
 resultados traz `llm_calls`, `input_tokens` e `output_tokens` por problema, para comparar custo entre grafos.
+
+`attempts` representa somente submissões reais ao AtCoder. Falhas na validação
+local usam um contador separado (`MAX_VALIDATION_ATTEMPTS`) e não consomem uma
+das três submissões permitidas. Ao retomar, problemas com um veredicto `AC`
+registrado no CSV ou nos logs de tentativa são pulados.
 
 ## Arquitetura do loop
 

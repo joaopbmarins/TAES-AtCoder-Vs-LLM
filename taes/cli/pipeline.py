@@ -208,7 +208,13 @@ def build_parser() -> argparse.ArgumentParser:
     loop_p.add_argument("--out-dir", default=str(DEFAULT_LOOP_SOLUTIONS_DIR), help="Diretório para salvar as soluções.")
     loop_p.add_argument("--provider", choices=["openai", "google", "nvidia"], default="google")
     loop_p.add_argument("--model", default="gemini-3.8-flash")
-    loop_p.add_argument("--temperature", type=float, default=1.0)
+    loop_p.add_argument("--graph", default=None)
+    loop_p.add_argument("--planner-model")
+    loop_p.add_argument("--coder-model")
+    loop_p.add_argument("--test-model")
+    loop_p.add_argument("--planner-reasoning", choices=["low", "medium", "high"], default="high")
+    loop_p.add_argument("--coder-reasoning", choices=["low", "medium", "high"], default="medium")
+    loop_p.add_argument("--test-reasoning", choices=["low", "medium", "high"], default="medium")
     loop_p.add_argument("--max-tokens", type=int, default=4096)
     loop_p.add_argument("--no-resume", action="store_true")
 
@@ -245,7 +251,13 @@ def build_parser() -> argparse.ArgumentParser:
     all_p.add_argument("--seed", type=int, default=42)
     all_p.add_argument("--loop-provider", choices=["openai", "google", "nvidia"], default="google")
     all_p.add_argument("--loop-model", default="gemini-3.8-flash")
-    all_p.add_argument("--loop-temperature", type=float, default=1.0)
+    all_p.add_argument("--loop-graph", default=None)
+    all_p.add_argument("--planner-model")
+    all_p.add_argument("--coder-model")
+    all_p.add_argument("--test-model")
+    all_p.add_argument("--planner-reasoning", choices=["low", "medium", "high"], default="high")
+    all_p.add_argument("--coder-reasoning", choices=["low", "medium", "high"], default="medium")
+    all_p.add_argument("--test-reasoning", choices=["low", "medium", "high"], default="medium")
     all_p.add_argument("--loop-max-tokens", type=int, default=4096)
     all_p.add_argument("--no-loop-resume", action="store_true")
     all_p.add_argument("--with-qodana", action="store_true", help="Roda também a análise Qodana ao fim.")
@@ -292,7 +304,13 @@ def main(argv=None):
             out_dir=args.out_dir,
             provider=args.provider,
             model=args.model,
-            temperature=args.temperature,
+            graph=args.graph,
+            planner_model=args.planner_model,
+            coder_model=args.coder_model,
+            test_model=args.test_model,
+            planner_reasoning=args.planner_reasoning,
+            coder_reasoning=args.coder_reasoning,
+            test_reasoning=args.test_reasoning,
             max_tokens=args.max_tokens,
             no_resume=args.no_resume,
         )
@@ -365,7 +383,13 @@ def main(argv=None):
             out_dir=solutions_dir,
             provider=args.loop_provider,
             model=args.loop_model,
-            temperature=args.loop_temperature,
+            graph=args.loop_graph,
+            planner_model=args.planner_model,
+            coder_model=args.coder_model,
+            test_model=args.test_model,
+            planner_reasoning=args.planner_reasoning,
+            coder_reasoning=args.coder_reasoning,
+            test_reasoning=args.test_reasoning,
             max_tokens=args.loop_max_tokens,
             no_resume=args.no_loop_resume,
         )

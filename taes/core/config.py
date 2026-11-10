@@ -1,6 +1,7 @@
 """Constantes compartilhadas pelo pacote."""
 
-MAX_ATTEMPTS = 3            # tentativas/submissões por problema (1 geração + até 2 reparos)
+MAX_ATTEMPTS = 3            # máximo de submissões ao AtCoder por problema
+MAX_VALIDATION_ATTEMPTS = 3 # máximo de falhas de validação local antes de encerrar um ciclo
 MAX_FEEDBACK_CHARS = 2000   # tamanho máximo do feedback de erro enviado no prompt de reparo
 FENCE = "`" * 3
 
@@ -14,7 +15,7 @@ AVAILABLE_GRAPHS = ("default", "multiagent", "dummy")
 # Colunas do CSV de resultados
 # Mantém a compatibilidade com o histórico e também registra motivo/feedback da submissão.
 RESULT_FIELDS = ["problem_id", "verdict", "attempts", "time_ms", "memory_kb", "reason", "feedback",
-                 "llm_calls", "input_tokens", "output_tokens"]
+                 "validation_attempts", "llm_calls", "input_tokens", "output_tokens"]
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
