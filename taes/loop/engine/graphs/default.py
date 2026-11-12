@@ -1,16 +1,15 @@
 """Grafo padrão do projeto: build_prompt -> generate -> evaluate -> (reparo | fim)."""
 from __future__ import annotations
 
-import ast
 import logging
-import re
 
 from langgraph.graph import END, START, StateGraph
 
-from ....core.config import FENCE, LOCAL_PRECHECK, MAX_ATTEMPTS, MAX_FEEDBACK_CHARS
+from ....core.config import FENCE, LOCAL_PRECHECK, MAX_ATTEMPTS, MAX_FEEDBACK_CHARS, MAX_VALIDATION_ATTEMPTS
 from ...integrations.judge import Submitter
 from ...integrations.llm import invoke_with_retry
 from ...validation.local_check import check_samples
+from .common import extract_code
 from .state import S
 
 log = logging.getLogger(__name__)
@@ -36,38 +35,6 @@ def repair_prompt(statement: str, error: str, code: str) -> str:
     )
 
 
-_FENCE_RE = re.compile(r"```[ \t]*([\w+#-]*)[ \t]*\r?\n(.*?)\r?\n?```", re.DOTALL)
-_PY_TAGS = {"python", "python3", "py"}
-
-
-def _is_valid_python(text: str) -> bool:
-    try:
-        ast.parse(text)
-    except (SyntaxError, ValueError):
-        return False
-    return bool(text.strip())
-
-
-def extract_code(text: str) -> str:
-    """Último bloco ```python da resposta; sem tag, só aceita blocos que parseiam como Python.
-
-    Respostas truncadas (fence de abertura sem fechamento) também são tratadas.
-    """
-    text = text or ""
-    blocks = _FENCE_RE.findall(text)
-    tagged = [code for tag, code in blocks if tag.lower() in _PY_TAGS and code.strip()]
-    if tagged:
-        return tagged[-1].strip() + "\n"
-    untagged = [code for tag, code in blocks if not tag and _is_valid_python(code)]
-    if untagged:
-        return untagged[-1].strip() + "\n"
-
-    m = re.search(r"```[ \t]*(?:python3?|py)?[ \t]*\r?\n(.*)$", text, re.DOTALL | re.IGNORECASE)  # truncada
-    candidate = m.group(1) if m else text
-    candidate = re.sub(r"\r?\n```\s*$", "", candidate).strip()
-    return candidate + "\n" if _is_valid_python(candidate) else ""
-
-
 def build_default_graph(llm, submit_fn: Submitter):
     def build_prompt(s: S) -> S:
         st = s["problem"]["statement"]
@@ -85,6 +52,13 @@ def build_default_graph(llm, submit_fn: Submitter):
         return {"code": code, "raw": text, "attempt": attempt_no}
 
     def evaluate(s: S) -> S:
+        validation_attempts = s.get("validation_attempts", 0) + 1
+        entry = {
+            "attempt": s["attempt"],
+            "prompt": s["prompt"],
+            "raw_response": s["raw"],
+            "code": s["code"],
+        }
         if not s["code"]:
             res = {"verdict": "RE", "time_ms": None, "memory_kb": None, "feedback": "No code block found."}
             log.warning("[graph] tentativa sem bloco de código, verdict=RE")
@@ -93,22 +67,35 @@ def build_default_graph(llm, submit_fn: Submitter):
             if res is not None:
                 res["source"] = "local"
                 log.info("[graph] falhou na checagem local: %s (não submetido)", res["verdict"])
+                return {
+                    "result": res,
+                    "validation_attempts": validation_attempts,
+                    "log": s.get("log", []) + [{**entry, "result": res}],
+                }
             else:
                 log.info("[graph] enviando solução para submissão; attempt=%s", s["attempt"])
                 res = submit_fn(s["problem"], s["code"])
                 res["source"] = "atcoder"
+                submission_attempts = s.get("submission_attempts", 0) + 1
                 log.info("[graph] resultado da submissão: %s", res.get("verdict"))
-        entry = {
-            "attempt": s["attempt"],
-            "prompt": s["prompt"],
-            "raw_response": s["raw"],
-            "code": s["code"],
+                return {
+                    "result": res,
+                    "submission_attempts": submission_attempts,
+                    "validation_attempts": 0,
+                    "log": s.get("log", []) + [{**entry, "result": res}],
+                }
+        return {
             "result": res,
+            "validation_attempts": validation_attempts,
+            "log": s.get("log", []) + [{**entry, "result": res}],
         }
-        return {"result": res, "log": s.get("log", []) + [entry]}
 
     def route(s: S) -> str:
-        done = s["result"]["verdict"] == "AC" or s["attempt"] >= MAX_ATTEMPTS
+        done = (
+            s["result"]["verdict"] == "AC"
+            or s.get("submission_attempts", 0) >= MAX_ATTEMPTS
+            or s.get("validation_attempts", 0) >= MAX_VALIDATION_ATTEMPTS
+        )
         return "end" if done else "build_prompt"
 
     g = StateGraph(S)

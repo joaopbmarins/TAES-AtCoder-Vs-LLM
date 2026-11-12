@@ -9,6 +9,7 @@ from .config import (
     LOCAL_TIMEOUT_S,
     MAX_ATTEMPTS,
     MAX_FEEDBACK_CHARS,
+    MAX_VALIDATION_ATTEMPTS,
     RECURSION_LIMIT,
     RESULT_FIELDS,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "LOOP_DIR",
     "MAX_ATTEMPTS",
     "MAX_FEEDBACK_CHARS",
+    "MAX_VALIDATION_ATTEMPTS",
     "OUTPUTS_DIR",
     "PROJECT_ROOT",
     "Problem",

@@ -188,6 +188,7 @@ def _handle_manual_captcha(
     language_id: str | None = None,
     session_cookie: str | None = None,
     after_id: int = 0,
+    code_output_path: str | Path | None = None,
 ) -> dict:
     browser_task_url = task_url if task_url.startswith("http") else f"https://atcoder.jp{task_url}"
     login_url = "https://atcoder.jp/login"
@@ -200,6 +201,11 @@ def _handle_manual_captcha(
     print(f"Tarefa: {browser_task_url}")
 
     if code:
+        if code_output_path is not None:
+            output_path = Path(code_output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(code, encoding="utf-8")
+            print(f"Código salvo em: {output_path}")
         _copy_text_to_clipboard(code)
 
     try:
@@ -448,7 +454,12 @@ def _build_feedback(status: str, time_ms: int | None, memory_kb: int | None) -> 
     return " ".join(p for p in parts if p)
 
 
-def submit_atcoder(problem: dict, code: str, session_cookie: str | None = None) -> dict:
+def submit_atcoder(
+    problem: dict,
+    code: str,
+    session_cookie: str | None = None,
+    code_output_path: str | Path | None = None,
+) -> dict:
     load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env")
 
     contest = problem.get("contest") or str(problem.get("problem_id", "")).rsplit("_", 1)[0]
@@ -533,7 +544,7 @@ def submit_atcoder(problem: dict, code: str, session_cookie: str | None = None) 
     submit_response = session.post(action_url, data=payload, timeout=60)
     if _is_cloudflare_challenge(submit_response):
         fallback = _handle_manual_captcha(session, contest, problem_id, task_url, code, language_id, session_cookie,
-                                          after_id=baseline_id)
+                                          after_id=baseline_id, code_output_path=code_output_path)
         return {
             "verdict": fallback["verdict"],
             "time_ms": fallback["time_ms"],
