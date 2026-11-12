@@ -7,7 +7,7 @@ name = "taes-atcoder-vs-llm"
 version = "0.1.0"
 description = "Pipeline para comparar soluções humanas do AtCoder com soluções geradas por LLM."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.15"
 dependencies = [
     "beautifulsoup4",
     "langchain-google-genai",

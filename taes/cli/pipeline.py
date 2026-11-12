@@ -58,12 +58,12 @@ def export_problem_ids(input_csv: str | Path, out_csv: str | Path) -> str:
     return str(out)
 
 
-def run_filter_stage(raw_csv: str | Path, out_csv: str | Path, **kwargs) -> str:
+def run_filter_stage(raw_csv: str | Path | None, out_csv: str | Path, **kwargs) -> str:
     out = Path(out_csv)
     out.parent.mkdir(parents=True, exist_ok=True)
     processar(
         saida=str(out),
-        dataset_path=str(raw_csv),
+        dataset_path=None if raw_csv is None else str(raw_csv),
         **kwargs,
     )
     return str(out)
@@ -176,7 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="stage", required=True)
 
     filter_p = sub.add_parser("filter", help="Filtra o dataset bruto em um CSV uniforme.")
-    filter_p.add_argument("--csv", default="submissions.csv", help="Dataset bruto do AtCoder Problems.")
+    filter_p.add_argument("--csv", help="Dataset bruto local; se omitido, baixa o dataset do AtCoder Problems.")
     filter_p.add_argument("--out", default=str(DEFAULT_FILTERED_SUBMISSIONS), help="CSV de saída filtrado.")
     filter_p.add_argument("--contests", nargs="*", help="Ex.: abc300 abc301")
     filter_p.add_argument("--prefixos-contest", nargs="*", help="Ex.: abc arc")
@@ -233,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     qodana_p.add_argument("--sources", default="AtCoder=humano,IA=IA")
 
     all_p = sub.add_parser("all", help="Executa filter + download + loop em sequência e opcionalmente Qodana.")
-    all_p.add_argument("--raw-csv", default="submissions.csv", help="Dataset bruto do AtCoder Problems.")
+    all_p.add_argument("--raw-csv", help="Dataset bruto local; se omitido, baixa o dataset do AtCoder Problems.")
     all_p.add_argument("--out-dir", default=str(OUTPUTS_DIR / "00_pipeline"), help="Pasta de trabalho para a pipeline inteira.")
     all_p.add_argument("--contests", nargs="*")
     all_p.add_argument("--prefixos-contest", nargs="*")

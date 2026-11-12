@@ -160,7 +160,11 @@ def processar(
 
     if dataset_path is not None:
         if not os.path.exists(dataset_path):
-            raise FileNotFoundError(f"Dataset não encontrado: {dataset_path}")
+            raise FileNotFoundError(
+                f"Dataset não encontrado: {dataset_path}. "
+                "Remova --csv para baixar o dataset automaticamente, "
+                "ou informe o caminho de um arquivo local existente."
+            )
         subs = dataset_path
     else:
         subs = garantir_dataset()

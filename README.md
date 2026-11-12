@@ -1,163 +1,224 @@
 # TAES AtCoder vs LLM
 
-Pipeline para filtrar submissões do AtCoder, baixar código humano, gerar
-soluções com LLMs e comparar qualidade com Qodana.
+Pipeline para comparar soluções humanas do AtCoder com soluções geradas por
+LLM. O fluxo filtra submissões do AtCoder, baixa os códigos humanos, gera uma
+solução para cada problema e registra o veredicto obtido no AtCoder.
 
-## Estrutura
+## Experimento principal
+
+O experimento usado como referência neste projeto foi executado em duas
+partes: seleção dos dados e geração/submissão das soluções.
+
+### 1. Selecionar os 17 problemas
+
+No Windows (PowerShell):
+
+```powershell
+.\.venv\Scripts\taes-pipeline.exe filter `
+  --linguagens Python PyPy `
+  --resultados AC `
+  --contests abc399 arc195 agc071 `
+  --max-por-problema 5 `
+  --max-por-contest 50
+```
+
+O comando baixa `submissions.csv.gz` automaticamente se o dataset ainda não
+existir. Para usar um arquivo local, acrescente `--csv caminho\submissions.csv`.
+
+No Linux:
+
+```bash
+taes-pipeline filter \
+  --linguagens Python PyPy \
+  --resultados AC \
+  --contests abc399 arc195 agc071 \
+  --max-por-problema 5 \
+  --max-por-contest 50
+```
+
+Para usar um arquivo local, acrescente `--csv caminho/submissions.csv`.
+
+Essa configuração produziu 73 submissões humanas e 17 problemas únicos. Os
+arquivos principais dessa etapa são:
 
 ```text
-taes/
-├── analysis/    # análise Qodana
-├── atcoder/     # download e integração HTTP com AtCoder
-├── cli/         # orquestração da pipeline
-├── core/        # modelos compartilhados
-├── loop/
-│   ├── engine/        # execução e grafos
-│   ├── integrations/  # AtCoder, LLM e scraping
-│   └── validation/    # checagem local de soluções
-├── pipeline/    # filtragem e preparação de dados
-└── storage/     # CSVs e artefatos persistidos
-tests/           # testes automatizados
+outputs/01_filter/01_filter_filtered_submissions.csv
+outputs/02_download/AtCoder/02_download_atcoder_submissions_metadata.csv
+outputs/02_download/AtCoder/02_download_atcoder_submissions_problems.csv
 ```
 
-O loop oferece dois fluxos: `default` é o baseline de geração e reparo;
-`multiagent` executa o fluxo Planner/Coder/Test/Validator antes da submissão.
-Selecione o fluxo com `taes-loop --graph default` ou
-`taes-loop --graph multiagent`.
+### 2. Baixar, gerar e avaliar
 
-No grafo `multiagent`, selecione um modelo por agente com `--planner-model`,
-`--coder-model` e `--test-model`. O provider é definido por `--provider`; se
-um modelo não for informado, ele herda `--model`. Exemplo:
+Windows (PowerShell):
 
-```bash
-taes-loop --graph multiagent --provider google \
-  --model gemini-3.8-flash \
-  --planner-model gemini-3.8-pro \
-  --coder-model gemini-3.8-flash \
-  --test-model gemini-3.8-flash
+```powershell
+.\.venv\Scripts\taes-pipeline.exe download
+.\.venv\Scripts\taes-pipeline.exe problems
+
+.\.venv\Scripts\taes-loop.exe `
+  --provider google `
+  --model gemini-3.8-flash `
+  --out outputs/03_loop/03_loop_resultados.csv `
+  --out-dir outputs/03_loop/03_loop_solucoes
 ```
 
-O Test Agent pode fazer novas tentativas quando sua resposta não for JSON
-válido ou contiver itens inválidos. Cada tentativa recebe somente o enunciado
-e o plano, nunca o código candidato nem a saída de uma tentativa anterior,
-para evitar viés de confirmação. Testes gerados continuam sendo avisos; apenas
-os exemplos oficiais bloqueiam a submissão.
-
-No `multiagent`, o Planner usa raciocínio `high`, enquanto Coder e Test Agent
-usam raciocínio `medium` por padrão. Esses níveis podem ser ajustados com
-`--planner-reasoning`, `--coder-reasoning` e `--test-reasoning`. O parâmetro de
-raciocínio é enviado ao provider OpenAI.
-
-Existe uma única implementação por funcionalidade. Os arquivos antigos na
-raiz foram removidos para evitar wrappers e imports duplicados.
-
-## Instalação
+Linux:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-```
-
-Configure as credenciais em `.env` usando [`.env.example`](./.env.example).
-
-## Comandos
-
-```bash
-taes-pipeline --help
-taes-loop --help
-taes-qodana --help
-```
-
-Fluxo recomendado:
-
-```bash
-taes-pipeline filter --csv submissions.csv
 taes-pipeline download
 taes-pipeline problems
-taes-loop
+
+taes-loop \
+  --provider google \
+  --model gemini-3.8-flash \
+  --out outputs/03_loop/03_loop_resultados.csv \
+  --out-dir outputs/03_loop/03_loop_solucoes
+```
+
+O loop usa o grafo `default` por padrão. Ele coleta o enunciado no AtCoder,
+gera o código, executa uma pré-validação local com os exemplos e submete o
+código. Em caso de falha, pode gerar uma correção até o limite configurado.
+É necessário definir `GOOGLE_API_KEY` no `.env` e ter uma sessão autenticada
+do AtCoder para submissões reais.
+
+Os resultados ficam em:
+
+```text
+outputs/03_loop/03_loop_resultados.csv
+outputs/03_loop/03_loop_resultados_erros.csv
+outputs/03_loop/03_loop_solucoes/
+```
+
+No estado registrado no repositório, os 17 problemas resultaram em 9 `AC`,
+6 `WA` e 2 `TLE`.
+
+### Análise opcional com Qodana
+
+Depois de preparar o layout humano/IA:
+
+```powershell
+.\.venv\Scripts\taes-pipeline.exe ai-layout
+.\.venv\Scripts\taes-qodana.exe outputs/02_download `
+  --rules-python rules_py.txt `
+  --rules-cpp rules_cpp.txt
+```
+
+Linux:
+
+```bash
 taes-pipeline ai-layout
 taes-qodana outputs/02_download \
   --rules-python rules_py.txt \
   --rules-cpp rules_cpp.txt
 ```
 
-Para executar tudo em sequência:
+Essa etapa compara os diagnósticos estáticos dos códigos humanos e gerados.
+Ela requer o ambiente do Qodana/Docker configurado na máquina.
 
-```bash
-taes-pipeline all --raw-csv submissions.csv
+## Instalação e execução por sistema
+
+Use Python 3.10–3.14. Python 3.15 ainda pode não ter wheels compatíveis para
+dependências nativas usadas pelas integrações.
+
+Windows (PowerShell):
+
+```powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\Activate.ps1
 ```
 
-No `multiagent`, só os exemplos oficiais do enunciado bloqueiam a submissão; os testes gerados pelo
-Test Agent não têm gabarito e só geram aviso (vão para o feedback se o AtCoder rejeitar). O CSV de
-resultados traz `llm_calls`, `input_tokens` e `output_tokens` por problema, para comparar custo entre grafos.
-
-`attempts` representa somente submissões reais ao AtCoder. Falhas na validação
-local usam um contador separado (`MAX_VALIDATION_ATTEMPTS`) e não consomem uma
-das três submissões permitidas. Ao retomar, problemas com um veredicto `AC`
-registrado no CSV ou nos logs de tentativa são pulados.
-
-## Arquitetura do loop
-
-```mermaid
-flowchart TD
-    A["Problema do AtCoder<br/>Enunciado, exemplos e restrições"]
-
-    subgraph AG["Sistema Multiagente"]
-        B["Planner Agent<br/>Analisa o problema e define<br/>a estratégia algorítmica"]
-        C["Coder Agent<br/>Gera o código"]
-        D["Test Agent<br/>Gera casos de teste<br/>normais e extremos"]
-        E["Validator Agent<br/>Executa os testes locais<br/>e analisa os erros"]
-        F{"Todos os testes<br/>passaram?"}
-        G["Corrige o código<br/>com base nas falhas"]
-
-        B --> C
-        B --> D
-        C --> E
-        D --> E
-        E --> F
-        F -- "Não" --> G
-        G --> C
-    end
-
-    H["Submission Manager<br/>Controla as tentativas"]
-    I["Submete ao AtCoder"]
-    J["Analisa o feedback<br/>Accepted, Wrong Answer,<br/>TLE, Runtime Error etc."]
-    K{"Solução aceita?"}
-    L{"Tentativas de submissão<br/>< 3?"}
-    M["Atualiza o contexto<br/>com o feedback recebido"]
-    N(["Fim: solução aceita"])
-    O(["Fim: limite de tentativas atingido"])
-
-    A --> B
-    F -- "Sim" --> H
-    H --> I
-    I --> J
-    J --> K
-    K -- "Sim" --> N
-    K -- "Não" --> L
-    L -- "Sim" --> M
-    M --> C
-    L -- "Não" --> O
-```
-
-Todos os caminhos padrão ficam centralizados em
-[`taes/core/paths.py`](./taes/core/paths.py), e os resultados são gravados em
-`outputs/`.
-
-As etapas são seguras para reexecução: downloads já registrados no metadata são
-ignorados, o loop retoma problemas aceitos, e CSVs, códigos e logs são
-substituídos atomicamente. Assim, uma interrupção não deixa um arquivo final
-parcial. Para recalcular uma etapa de filtragem, remova explicitamente seu
-arquivo de saída antes de executá-la novamente; para o loop, use `--no-resume`.
-
-## Desenvolvimento
+Linux:
 
 ```bash
+python3.14 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+```
+
+Copie [`.env.example`](./.env.example) para `.env` e preencha as credenciais
+do provider escolhido:
+
+```text
+GOOGLE_API_KEY=...
+OPENAI_API_KEY=...
+NVIDIA_API_KEY=...
+```
+
+## Arquitetura
+
+```text
+taes/
+├── pipeline/       Filtragem do dataset e preparação dos dados
+├── atcoder/        Download de submissões, metadados e problemas
+├── loop/
+│   ├── engine/     Grafos LangGraph e execução por problema
+│   ├── integrations/
+│   │   ├── llm.py      Providers e contagem de uso
+│   │   ├── scraper.py  Enunciados e exemplos do AtCoder
+│   │   └── judge.py    Validação e submissão
+│   └── validation/ Checagem local dos exemplos
+├── analysis/       Relatórios e comparação com Qodana
+├── storage/        Leitura e escrita dos CSVs e tentativas
+├── cli/            Orquestração dos comandos da pipeline
+└── core/           Configuração, modelos e caminhos padrão
+```
+
+O fluxo de dados é:
+
+```text
+submissions.csv.gz
+        │
+        ▼
+01_filter/filtered_submissions.csv
+        │
+        ├──► 02_download/AtCoder/   códigos e metadados humanos
+        │
+        └──► 03_loop/problems.csv
+                    │
+                    ▼
+              scraping → LLM → pré-validação → AtCoder
+                    │
+                    ▼
+              03_loop/resultados.csv e soluções aceitas
+```
+
+O grafo `default` é o fluxo principal. O projeto também possui o grafo
+`multiagent`, com Planner, Coder, Test Agent e Validator, e o grafo `dummy`
+para testes. Para selecionar outro grafo:
+
+```powershell
+.\.venv\Scripts\taes-loop.exe `
+  --graph multiagent `
+  --provider google `
+  --model gemini-3.8-flash
+```
+
+## Comandos úteis
+
+Windows (PowerShell):
+
+```powershell
+.\.venv\Scripts\taes-pipeline.exe --help
+.\.venv\Scripts\taes-pipeline.exe filter --help
+.\.venv\Scripts\taes-loop.exe --help
+python -m pytest
+ruff check taes tests
+python -m compileall -q taes
+```
+
+Linux:
+
+```bash
+taes-pipeline --help
+taes-pipeline filter --help
+taes-loop --help
 pytest
 ruff check taes tests
 python -m compileall -q taes
 ```
 
-O dataset bruto, credenciais e resultados gerados são locais e não devem ser
+As etapas são retomáveis: downloads consultam o metadata existente e o loop
+ignora problemas já registrados como `AC`. Use `--no-resume` para reprocessar
+o loop. Dataset, credenciais e resultados gerados são locais e não devem ser
 versionados.
