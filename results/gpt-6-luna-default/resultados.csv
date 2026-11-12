@@ -1,0 +1,156 @@
+problem_id,verdict,attempts,time_ms,memory_kb,reason,feedback,validation_attempts,llm_calls,input_tokens,output_tokens
+abc399_d,AC,1,535,149548,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 535 ms. Memory: 149548 KB. AtCoder does not reveal the failing test case.,0,1,777,2202
+abc399_f,AC,1,543,28036,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 543 ms. Memory: 28036 KB. AtCoder does not reveal the failing test case.,0,1,414,625
+abc399_a,AC,1,11,8924,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 11 ms. Memory: 8924 KB. AtCoder does not reveal the failing test case.,0,2,790,218
+abc399_c,AC,1,168,46724,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 168 ms. Memory: 46724 KB. AtCoder does not reveal the failing test case.,0,1,426,277
+abc399_b,AC,1,10,9092,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 10 ms. Memory: 9092 KB. AtCoder does not reveal the failing test case.,0,1,758,141
+abc399_e,WA,3,25,10420,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: WA. Wrong Answer: the program ran but its output differs from the expected output on some hidden test. Execution time: 25 ms. Memory: 10420 KB. AtCoder does not reveal the failing test case.,0,3,2587,15312
+abc399_g,TLE,3,,110136,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: TLE. Time Limit Exceeded: the program is too slow on some hidden test; use a faster algorithm or faster I/O. Memory: 110136 KB. AtCoder does not reveal the failing test case.,0,4,8326,23866
+agc071_a,TLE,3,,18996,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: TLE. Time Limit Exceeded: the program is too slow on some hidden test; use a faster algorithm or faster I/O. Memory: 18996 KB. AtCoder does not reveal the failing test case.,0,3,4481,21593
+agc071_c,AC,1,1015,117020,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 1015 ms. Memory: 117020 KB. AtCoder does not reveal the failing test case.,0,1,708,23822
+agc071_b,WA,0,,,"Sample 1: wrong answer.
+Input:
+7 4
+(())
+
+Expected output:
+20
+Your output:
+","Sample 1: wrong answer.
+Input:
+7 4
+(())
+
+Expected output:
+20
+Your output:
+",3,3,2853,31095
+agc071_e,WA,2,,,"Sample 2: wrong answer.
+Input:
+71 998244353
+
+Expected output:
+473972314
+Your output:
+523087767
+","Sample 2: wrong answer.
+Input:
+71 998244353
+
+Expected output:
+473972314
+Your output:
+523087767
+",3,7,5950,111635
+agc071_d,WA,0,,,"Sample 1: wrong answer.
+Input:
+4
+4 2
+0 1 2 3
+4 3
+0 1 2 3
+20 5
+1 2 3 3 4 5 6 7 7 8 9 9 11 13 14 16 16 17 18 19
+20 10
+36410986 135774405 160873759 200077345 386257217 408140905 426675713 448759426 470780343 572969565 653981029 693304642 741916215 764524315 768298046 811893935 840607643 847634785 856942510 883746061
+
+Expected output:
+6
+5
+185
+739
+Your output:
+6
+5
+184
+739","Sample 1: wrong answer.
+Input:
+4
+4 2
+0 1 2 3
+4 3
+0 1 2 3
+20 5
+1 2 3 3 4 5 6 7 7 8 9 9 11 13 14 16 16 17 18 19
+20 10
+36410986 135774405 160873759 200077345 386257217 408140905 426675713 448759426 470780343 572969565 653981029 693304642 741916215 764524315 768298046 811893935 840607643 847634785 856942510 883746061
+
+Expected output:
+6
+5
+185
+739
+Your output:
+6
+5
+184
+739",3,3,4620,65235
+arc195_d,WA,3,71,27980,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: WA. Wrong Answer: the program ran but its output differs from the expected output on some hidden test. Execution time: 71 ms. Memory: 27980 KB. AtCoder does not reveal the failing test case.,0,3,2551,50305
+arc195_b,AC,2,1643,343616,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 1643 ms. Memory: 343616 KB. AtCoder does not reveal the failing test case.,0,2,1558,6028
+arc195_e,AC,1,485,82212,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 485 ms. Memory: 82212 KB. AtCoder does not reveal the failing test case.,0,1,840,2617
+arc195_c,WA,0,,,"Sample 1: wrong answer.
+Input:
+3
+2 3
+1 1
+4 0
+
+Expected output:
+Yes
+B 2 3
+R 3 2 
+B 2 2
+B 3 3
+R 2 4
+No
+Yes
+R 1 1
+R 1 2
+R 2 2
+R 2 1
+Your output:
+Yes
+B 1 2
+B 2 3
+R 3 2
+R 3 1
+B 2 1
+No
+Yes
+R 1 1
+R 1 2
+R 2 2
+R 2 1","Sample 1: wrong answer.
+Input:
+3
+2 3
+1 1
+4 0
+
+Expected output:
+Yes
+B 2 3
+R 3 2 
+B 2 2
+B 3 3
+R 2 4
+No
+Yes
+R 1 1
+R 1 2
+R 2 2
+R 2 1
+Your output:
+Yes
+B 1 2
+B 2 3
+R 3 2
+R 3 1
+B 2 1
+No
+Yes
+R 1 1
+R 1 2
+R 2 2
+R 2 1",3,3,4842,16233
+arc195_a,AC,1,132,46908,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 132 ms. Memory: 46908 KB. AtCoder does not reveal the failing test case.,0,1,463,575

@@ -96,6 +96,9 @@ outputs/
 └── 04_qodana/       relatórios opcionais de análise estática
 ```
 
+Resultados selecionados para publicação ficam em `results/`; os artefatos
+completos de execução permanecem em `outputs/`, que não é versionado.
+
 ## Análise Qodana (opcional)
 
 Windows (PowerShell):
