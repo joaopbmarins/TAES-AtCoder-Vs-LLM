@@ -4,10 +4,43 @@ Pipeline para comparar soluções humanas do AtCoder com soluções geradas por
 LLM. O fluxo filtra submissões do AtCoder, baixa os códigos humanos, gera uma
 solução para cada problema e registra o veredicto obtido no AtCoder.
 
+Este projeto foi desenvolvido com base no artigo “The transformative potential
+of AI in software engineering: a case study on LeetCode and ChatGPT” como
+trabalho da disciplina Tópicos Avançados em Engenharia de Software, no período
+2026.2, ministrada pelo professor Augusto Cezar Alves Sampaio.
+
+Para executar as configurações do experimento, consulte
+[EXECUCAO_EXPERIMENTO.md](./EXECUCAO_EXPERIMENTO.md). O roteiro está em
+PowerShell e também explica como adaptar os comandos para Bash. Para conhecer
+as opções de cada etapa, consulte o [guia de parâmetros](./GUIA_SCRIPTS.md).
+
 ## Experimento principal
 
 O experimento usado como referência neste projeto foi executado em duas
 partes: seleção dos dados e geração/submissão das soluções.
+
+### Objetivo e protocolo
+
+O objetivo é observar como diferentes estratégias de uso de LLM resolvem
+problemas reais de programação competitiva. O conjunto contém 17 problemas
+dos contests `abc399`, `arc195` e `agc071`. Para caracterizar os problemas e
+preparar uma referência humana, foram selecionadas submissões aceitas em
+Python ou PyPy: no máximo cinco por problema e 50 por contest, totalizando
+73 códigos humanos.
+
+Para cada problema, o sistema obtém o enunciado e os exemplos, pede ao modelo
+que gere uma solução e valida o código localmente com esses exemplos antes
+da submissão ao AtCoder. Se a validação ou a submissão indicar uma falha, o
+modelo pode receber o feedback e tentar corrigir a solução. O limite é de
+três submissões por problema; uma solução `AC` encerra o processo daquele
+problema.
+
+Os resultados em `results/` comparam o grafo padrão, que concentra geração e
+reparo em um fluxo único, com o grafo `multiagent`, que distribui planejamento,
+codificação, teste e validação entre agentes. As duas execuções GPT-6 Luna
+usam o mesmo conjunto de problemas. Essa comparação descreve o desempenho
+observado neste recorte de 17 problemas; não deve ser interpretada como uma
+medida universal de desempenho dos modelos.
 
 ### 1. Selecionar os 17 problemas
 
@@ -89,8 +122,41 @@ outputs/03_loop/03_loop_resultados_erros.csv
 outputs/03_loop/03_loop_solucoes/
 ```
 
-No estado registrado no repositório, os 17 problemas resultaram em 9 `AC`,
-6 `WA` e 2 `TLE`.
+## Resultados da experimentação
+
+A pasta [`results/`](./results/) contém os resultados consolidados das
+execuções, organizados por modelo e grafo. Cada subpasta inclui um README com
+a configuração e o resumo, além do CSV com uma linha por problema e dados
+como veredicto, número de tentativas, tempo, memória e uso de tokens.
+
+| Execução | Grafo | AC | WA | TLE | CSV |
+|---|---|---:|---:|---:|---|
+| `gpt-6-luna-default` | Padrão | 9 | 6 | 2 | [resultados.csv](./results/gpt-6-luna-default/resultados.csv) |
+| `gpt-6-luna-multiagent` | Multiagente | 12 | 4 | 1 | [resultados.csv](./results/gpt-6-luna-multiagent/resultados.csv) |
+
+### Significado dos veredictos
+
+Os códigos abaixo são os veredictos usados pelo AtCoder e registrados pelo
+pipeline:
+
+| Código | Nome em inglês | Significado |
+|---|---|---|
+| `AC` | Accepted | Solução aceita: passou em todos os testes. |
+| `WA` | Wrong Answer | Resposta incorreta: a saída não corresponde à esperada em algum teste. |
+| `TLE` | Time Limit Exceeded | Limite de tempo excedido. |
+| `RE` | Runtime Error | Erro durante a execução do programa. |
+| `CE` | Compilation Error | Erro de compilação. |
+| `MLE` | Memory Limit Exceeded | Limite de memória excedido. |
+| `OLE` | Output Limit Exceeded | Limite de saída excedido. |
+| `PE` | Presentation Error | Erro no formato/apresentação da saída. |
+| `QLE` | Query Limit Exceeded | Limite de consultas excedido. |
+| `SE` | System Error | Erro do sistema durante a avaliação. |
+| `IE` | Judge Error | Erro interno do avaliador. |
+| `WJ` | Waiting for Judging | A avaliação ainda está em andamento ou não foi concluída. |
+
+`ERROR: ...` nas saídas do loop indica uma falha da execução da pipeline
+(por exemplo, ao obter o enunciado ou chamar o modelo), não um veredicto do
+AtCoder.
 
 ### Análise opcional com Qodana
 
@@ -220,5 +286,6 @@ python -m compileall -q taes
 
 As etapas são retomáveis: downloads consultam o metadata existente e o loop
 ignora problemas já registrados como `AC`. Use `--no-resume` para reprocessar
-o loop. Dataset, credenciais e resultados gerados são locais e não devem ser
-versionados.
+o loop. O dataset, as credenciais e os artefatos intermediários gerados em
+`outputs/` são locais e não devem ser versionados; os resultados consolidados
+do experimento estão em `results/`.
