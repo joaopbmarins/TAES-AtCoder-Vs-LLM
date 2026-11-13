@@ -1,0 +1,121 @@
+problem_id,verdict,attempts,time_ms,memory_kb,reason,feedback,validation_attempts,llm_calls,input_tokens,output_tokens
+abc399_d,AC,1,569,125460,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 569 ms. Memory: 125460 KB. AtCoder does not reveal the failing test case.,0,3,3472,8087
+abc399_a,AC,1,11,8872,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 11 ms. Memory: 8872 KB. AtCoder does not reveal the failing test case.,0,4,2051,1090
+abc399_f,AC,1,570,27996,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 570 ms. Memory: 27996 KB. AtCoder does not reveal the failing test case.,0,3,2601,3232
+abc399_c,AC,1,177,46696,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 177 ms. Memory: 46696 KB. AtCoder does not reveal the failing test case.,0,3,1879,1380
+abc399_b,AC,1,10,9220,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 10 ms. Memory: 9220 KB. AtCoder does not reveal the failing test case.,0,3,2907,1431
+abc399_e,AC,1,29,10116,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 29 ms. Memory: 10116 KB. AtCoder does not reveal the failing test case.,0,3,3424,31542
+abc399_g,WA,3,4528,111312,Submissão manual concluída após validação do navegador do usuário.,"AtCoder verdict: WA. Wrong Answer: the program ran but its output differs from the expected output on some hidden test. Execution time: 4528 ms. Memory: 111312 KB. AtCoder does not reveal the failing test case.
+Generated test failed (the expected output of generated tests may be wrong): Sample 6: wrong answer.
+Input:
+3 4 4
+1 1 1 1
+1 2 1
+1 2 3
+2 3 2
+2 3 4
+
+Expected output:
+11
+Your output:
+6",0,6,17768,34433
+agc071_a,AC,3,342,33624,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 342 ms. Memory: 33624 KB. AtCoder does not reveal the failing test case.,0,5,11596,23182
+agc071_c,AC,1,990,181280,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 990 ms. Memory: 181280 KB. AtCoder does not reveal the failing test case.,0,3,4859,49172
+agc071_e,WA,0,,,"Sample 2: wrong answer.
+Input:
+71 998244353
+
+Expected output:
+473972314
+Your output:
+421321594
+","Sample 2: wrong answer.
+Input:
+71 998244353
+
+Expected output:
+473972314
+Your output:
+421321594
+",3,5,7905,61221
+agc071_b,TLE,0,,,"Sample 4: timed out after 10s.
+Input:
+10000000 28
+(()()(()))(()((()))())()(())
+","Sample 4: timed out after 10s.
+Input:
+10000000 28
+(()()(()))(()((()))())()(())
+",3,5,5034,92552
+agc071_d,WA,3,47,28232,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: WA. Wrong Answer: the program ran but its output differs from the expected output on some hidden test. Execution time: 47 ms. Memory: 28232 KB. AtCoder does not reveal the failing test case.,0,7,11064,139466
+arc195_d,AC,1,196,28040,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 196 ms. Memory: 28040 KB. AtCoder does not reveal the failing test case.,0,3,1951,72111
+arc195_e,AC,1,474,75880,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 474 ms. Memory: 75880 KB. AtCoder does not reveal the failing test case.,0,4,7431,9261
+arc195_b,AC,1,1514,343696,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 1514 ms. Memory: 343696 KB. AtCoder does not reveal the failing test case.,0,3,3961,11402
+arc195_a,AC,1,83,46840,Submissão manual concluída após validação do navegador do usuário.,AtCoder verdict: AC. Execution time: 83 ms. Memory: 46840 KB. AtCoder does not reveal the failing test case.,0,3,2512,2429
+arc195_c,WA,0,,,"Sample 1: wrong answer.
+Input:
+3
+2 3
+1 1
+4 0
+
+Expected output:
+Yes
+B 2 3
+R 3 2 
+B 2 2
+B 3 3
+R 2 4
+No
+Yes
+R 1 1
+R 1 2
+R 2 2
+R 2 1
+Your output:
+Yes
+R 7 7
+B 8 7
+R 9 6
+B 9 5
+B 8 6
+No
+Yes
+R 6 6
+R 6 7
+R 7 7
+R 7 6
+","Sample 1: wrong answer.
+Input:
+3
+2 3
+1 1
+4 0
+
+Expected output:
+Yes
+B 2 3
+R 3 2 
+B 2 2
+B 3 3
+R 2 4
+No
+Yes
+R 1 1
+R 1 2
+R 2 2
+R 2 1
+Your output:
+Yes
+R 7 7
+B 8 7
+R 9 6
+B 9 5
+B 8 6
+No
+Yes
+R 6 6
+R 6 7
+R 7 7
+R 7 6
+",3,5,9700,25198
